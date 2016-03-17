@@ -70,19 +70,17 @@ func (s *SkyServer) Serve() error {
 	s.init()
 
 	var listener net.Listener
+	var err error
 	if s.Listener != nil {
-		l, err := s.network.Bind(s.Listener, 1000)
-		if err != nil {
-			return err
-		}
-		listener = l
+		listener, err = s.network.Bind(s.Listener, 1000)
 	} else {
-		l, err := s.network.BindNet("tcp4", s.Addr, 1000)
-		if err != nil {
-			return err
+		listener, err = s.network.BindNet("tcp4", s.Addr, 1000)
+		if err == nil {
+			defer listener.Close()
 		}
-		listener = l
-		defer listener.Close()
+	}
+	if err != nil {
+		return err
 	}
 
 	var errMass int
@@ -151,15 +149,26 @@ func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
 
 	s.chanOffset++
 	offset := s.chanOffset
-	l, err := s.network.BindNet("tcp4", s.Addr, offset)
+
+	var listener net.Listener
+	var err error
+	if s.Listener != nil {
+		listener, err = s.network.Bind(s.Listener, offset)
+	} else {
+		listener, err = s.network.BindNet("tcp4", s.Addr, offset)
+		if err == nil {
+			defer listener.Close()
+		}
+	}
 	if err != nil {
 		s.chanOffset--
 		s.mux.Unlock()
 		s.reportErr(err)
 		return 0, err
 	}
+
 	c := skyChannel{
-		Listener: l,
+		Listener: listener,
 		outChan:  out,
 		onError:  s.OnError,
 		onClosed: func() {
