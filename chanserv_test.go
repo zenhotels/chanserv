@@ -20,9 +20,6 @@ func TestChanserv(t *testing.T) {
 		}
 	}()
 
-	log.Println("will connect in 3 sec...")
-	time.Sleep(3 * time.Second)
-
 	cli := SkyClient{
 		DialTimeout: 2 * time.Second,
 		OnError: func(err error) {

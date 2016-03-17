@@ -1,6 +1,7 @@
 package chanserv
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 type SkyServer struct {
 	Addr        string
+	Listener    net.Listener
 	Source      SourceFunc
 	OnError     func(err error)
 	OnChanError func(err error)
@@ -50,17 +52,38 @@ func ListenAndServe(addr string, source SourceFunc) error {
 		Addr:   addr,
 		Source: source,
 	}
-	return server.ListenAndServe()
+	return server.Serve()
 }
 
-func (s *SkyServer) ListenAndServe() error {
+func Serve(l net.Listener, source SourceFunc) error {
+	if l == nil {
+		return errors.New("chanserv: no valid listener provided")
+	}
+	server := &SkyServer{
+		Listener: l,
+		Source:   source,
+	}
+	return server.Serve()
+}
+
+func (s *SkyServer) Serve() error {
 	s.init()
 
-	listener, err := s.network.BindNet("tcp4", s.Addr, 1000)
-	if err != nil {
-		return err
+	var listener net.Listener
+	if s.Listener != nil {
+		l, err := s.network.Bind(s.Listener, 1000)
+		if err != nil {
+			return err
+		}
+		listener = l
+	} else {
+		l, err := s.network.BindNet("tcp4", s.Addr, 1000)
+		if err != nil {
+			return err
+		}
+		listener = l
+		defer listener.Close()
 	}
-	defer listener.Close()
 
 	var errMass int
 	for {
