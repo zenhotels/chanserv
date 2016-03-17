@@ -10,3 +10,11 @@ type Source interface {
 }
 
 type SourceFunc func(reqBody []byte) <-chan Source
+
+type Server interface {
+	ListenAndServe(addr string, source SourceFunc) error
+}
+
+type Client interface {
+	Post(addr string, body []byte) (<-chan Source, error)
+}

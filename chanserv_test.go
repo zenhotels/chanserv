@@ -13,47 +13,72 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func TestAll(t *testing.T) {
+func TestChanserv(t *testing.T) {
 	go func() {
-		if err := ListenAndServe(":14000", SourceFn); err != nil {
+		if err := ListenAndServe(":5555", SourceFn); err != nil {
 			log.Fatalln(err)
 		}
-		log.Println("server died")
 	}()
 
 	log.Println("will connect in 3 sec...")
 	time.Sleep(3 * time.Second)
 
-	var wg sync.WaitGroup
-	if err := Connect(&wg, "127.0.0.1:14000"); err != nil {
-		log.Fatalln("[ERR]:", err)
+	cli := SkyClient{
+		DialTimeout: 2 * time.Second,
+		OnError: func(err error) {
+			t.Fatal("[ERR]", err)
+		},
 	}
-	wg.Wait()
+	sources, err := cli.Post("localhost:5555", []byte("hello"))
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+	go func() {
+		wg.Add(5 * 2)
+		var srcs int
+		for src := range sources {
+			srcs++
+			log.Println("[HEAD]", string(src.Header()))
+			go func(srcs int, src Source) {
+				var frames int
+				for frame := range src.Out() {
+					log.Printf("[FRAME %d from @%d] %s", frames, srcs, frame.Bytes())
+					frames++
+					wg.Done()
+				}
+			}(srcs, src)
+		}
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-time.Tick(10 * time.Second):
+		t.Fatal("timeout")
+	case <-done:
+	}
 }
 
 func SourceFn(req []byte) <-chan Source {
-	out := make(chan Source, 1024)
+	out := make(chan Source, 5)
 	for i := 0; i < 5; i++ {
-		src := source{n: i, data: req}
+		src := testSource{n: i, data: req}
 		out <- src.Run(time.Second*time.Duration(i+1) + 3)
 	}
 	close(out)
 	return out
 }
 
-type source struct {
+type testSource struct {
 	n      int
 	data   []byte
 	frames <-chan Frame
 }
 
-type frame []byte
-
-func (f frame) Bytes() []byte {
-	return f
-}
-
-func (s *source) Run(d time.Duration) *source {
+func (s *testSource) Run(d time.Duration) *testSource {
 	frames := make(chan Frame, 2)
 	go func() {
 		frames <- frame([]byte("wait for me!"))
@@ -65,12 +90,12 @@ func (s *source) Run(d time.Duration) *source {
 	return s
 }
 
-func (p *source) Header() []byte {
+func (p *testSource) Header() []byte {
 	buf := new(bytes.Buffer)
-	fmt.Fprintf(buf, "[HEAD] source #%d, req len: %d", p.n, len(p.data))
+	fmt.Fprintf(buf, "source @%d, for request: %s", p.n, p.data)
 	return buf.Bytes()
 }
 
-func (s *source) Out() <-chan Frame {
+func (s *testSource) Out() <-chan Frame {
 	return s.frames
 }

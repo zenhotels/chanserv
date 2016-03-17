@@ -25,6 +25,7 @@ type SkyServer struct {
 	chanOffset uint64
 	chanMap    map[uint64]skyChannel
 	mux        sync.RWMutex
+	network    skyapi.Network
 	initCtl    sync.Once
 }
 
@@ -40,6 +41,7 @@ func (s *SkyServer) init() {
 		}
 		s.chanOffset = 1000
 		s.chanMap = make(map[uint64]skyChannel)
+		s.network = skyproto_v1.SkyNetworkNew()
 	})
 }
 
@@ -54,8 +56,7 @@ func ListenAndServe(addr string, source SourceFunc) error {
 func (s *SkyServer) ListenAndServe() error {
 	s.init()
 
-	skynet := skyproto_v1.SkyNetworkNew()
-	listener, err := skynet.BindNet("tcp4", s.Addr, 1000)
+	listener, err := s.network.BindNet("tcp4", s.Addr, 1000)
 	if err != nil {
 		return err
 	}
@@ -72,11 +73,11 @@ func (s *SkyServer) ListenAndServe() error {
 			continue
 		}
 		errMass = 0
-		go s.serveMaster(skynet, masterConn, s.Source)
+		go s.serveMaster(masterConn, s.Source)
 	}
 }
 
-func (s *SkyServer) serveMaster(skynet skyapi.Network, masterConn net.Conn, masterFn SourceFunc) {
+func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 	if s.ServeTimeout > 0 {
 		masterConn.SetDeadline(time.Now().Add(s.ServeTimeout))
 	}
@@ -105,13 +106,13 @@ func (s *SkyServer) serveMaster(skynet skyapi.Network, masterConn net.Conn, mast
 				// sourcing is over
 				return
 			}
-			port, err := s.bindChannel(skynet, out.Out())
+			port, err := s.bindChannel(out.Out())
 			if s.reportErr(err) {
 				continue
 			}
 			addr := []byte(fmt.Sprintf("chanserv:%d", port))
-			if !s.reportErr(writeFrame(out.Header(), masterConn)) {
-				if s.reportErr(writeFrame(addr, masterConn)) {
+			if !s.reportErr(writeFrame(masterConn, out.Header())) {
+				if s.reportErr(writeFrame(masterConn, addr)) {
 					continue
 				}
 			}
@@ -122,12 +123,12 @@ func (s *SkyServer) serveMaster(skynet skyapi.Network, masterConn net.Conn, mast
 	}
 }
 
-func (s *SkyServer) bindChannel(skynet skyapi.Network, out <-chan Frame) (uint64, error) {
+func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
 	s.mux.Lock()
 
 	s.chanOffset++
 	offset := s.chanOffset
-	l, err := skynet.BindNet("tcp4", s.Addr, offset)
+	l, err := s.network.BindNet("tcp4", s.Addr, offset)
 	if err != nil {
 		s.chanOffset--
 		s.mux.Unlock()
@@ -161,11 +162,10 @@ func (s *SkyServer) unbindChannel(offset uint64) {
 }
 
 func (s *SkyServer) reportErr(err error) bool {
-	if s.OnError != nil {
-		s.OnError(err)
-	}
 	if err != nil {
-		panic(err.Error())
+		if s.OnError != nil {
+			s.OnError(err)
+		}
 		return true
 	}
 	return false
@@ -180,6 +180,8 @@ type skyChannel struct {
 }
 
 func (c skyChannel) serve(timeout time.Duration) {
+	defer c.Close()
+
 	conn, err := c.Accept()
 	if err != nil {
 		return
@@ -190,7 +192,7 @@ func (c skyChannel) serve(timeout time.Duration) {
 	defer conn.Close()
 	defer c.onClosed()
 	for frame := range c.outChan {
-		if err := writeFrame(frame.Bytes(), conn); err != nil {
+		if err := writeFrame(conn, frame.Bytes()); err != nil {
 			c.reportErr(err)
 		}
 	}
