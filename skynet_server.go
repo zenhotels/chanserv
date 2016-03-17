@@ -1,11 +1,12 @@
 package chanserv
 
 import (
-	"log"
+	"fmt"
 	"net"
 	"sync"
 	"time"
 
+	"hotcore.in/skynet/skyapi"
 	"hotcore.in/skynet/skyapi/skyproto_v1"
 )
 
@@ -37,6 +38,7 @@ func (s *SkyServer) init() {
 				time.Sleep(30 * time.Second)
 			}
 		}
+		s.chanOffset = 1000
 		s.chanMap = make(map[uint64]skyChannel)
 	})
 }
@@ -51,61 +53,30 @@ func ListenAndServe(addr string, source SourceFunc) error {
 
 func (s *SkyServer) ListenAndServe() error {
 	s.init()
-	log.Println("init done")
-	tcp, err := net.Listen("tcp4", s.Addr)
+
+	skynet := skyproto_v1.SkyNetworkNew()
+	listener, err := skynet.BindNet("tcp4", s.Addr, 1000)
 	if err != nil {
 		return err
 	}
+	defer listener.Close()
 
-	log.Println("listen at", s.Addr)
 	var errMass int
-	tcpConn, err := tcp.Accept()
-	log.Println("accepted tcp", tcpConn.LocalAddr(), tcpConn.RemoteAddr(), "error:", err)
-TCPLoop:
 	for {
+		masterConn, err := listener.Accept()
 		if s.reportErr(err) {
 			errMass++
 			if s.CriticalErrMass > 0 && errMass >= s.CriticalErrMass {
 				s.OnCriticalErrMass(err)
 			}
-			tcpConn, err = tcp.Accept()
 			continue
 		}
-		log.Println("new sky network over TCP")
-		skynet := skyproto_v1.SkyNetworkNew(tcpConn)
-		log.Println("listen skynet over TCP", s.Addr, "for skynet:12123123")
-		sky, err := skynet.Listen("", "skynet:12123123")
-		log.Println("listening. skynet error:", err)
-		if s.reportErr(err) {
-			tcpConn.Close()
-			// reset the backing TCP connection
-			tcpConn, err = tcp.Accept()
-			continue
-		}
-		// HACK test
-		// time.Sleep(time.Second)
-		log.Println("handling incoming master requests at", sky.Addr())
-		// handle incoming master requests
-		masterConn, err := sky.Accept()
-		log.Println("ACCEPTED master conn, err:", err)
-
-		for {
-			if s.reportErr(err) {
-				tcpConn.Close()
-				// reset the backing TCP connection
-				tcpConn, err = tcp.Accept()
-				continue TCPLoop
-			}
-			errMass = 0
-			log.Println("serving master", masterConn.LocalAddr(), masterConn.RemoteAddr())
-			go s.serveMaster(tcpConn, masterConn, s.Source)
-			return nil
-			// masterConn, err = sky.Accept()
-		}
+		errMass = 0
+		go s.serveMaster(skynet, masterConn, s.Source)
 	}
 }
 
-func (s *SkyServer) serveMaster(tcpConn net.Conn, masterConn net.Conn, masterFn SourceFunc) {
+func (s *SkyServer) serveMaster(skynet skyapi.Network, masterConn net.Conn, masterFn SourceFunc) {
 	if s.ServeTimeout > 0 {
 		masterConn.SetDeadline(time.Now().Add(s.ServeTimeout))
 	}
@@ -134,12 +105,13 @@ func (s *SkyServer) serveMaster(tcpConn net.Conn, masterConn net.Conn, masterFn 
 				// sourcing is over
 				return
 			}
-			addr, err := s.bindChannel(tcpConn, out.Out())
+			port, err := s.bindChannel(skynet, out.Out())
 			if s.reportErr(err) {
 				continue
 			}
+			addr := []byte(fmt.Sprintf("chanserv:%d", port))
 			if !s.reportErr(writeFrame(out.Header(), masterConn)) {
-				if s.reportErr(writeFrame([]byte("skynet"+addr), masterConn)) {
+				if s.reportErr(writeFrame(addr, masterConn)) {
 					continue
 				}
 			}
@@ -150,21 +122,17 @@ func (s *SkyServer) serveMaster(tcpConn net.Conn, masterConn net.Conn, masterFn 
 	}
 }
 
-func (s *SkyServer) bindChannel(tcpConn net.Conn, out <-chan Frame) (string, error) {
+func (s *SkyServer) bindChannel(skynet skyapi.Network, out <-chan Frame) (uint64, error) {
 	s.mux.Lock()
 
 	s.chanOffset++
 	offset := s.chanOffset
-	addr := chanAddr(offset)
-	log.Println("binding chan", addr)
-	skynet := skyproto_v1.SkyNetworkNew(tcpConn)
-	l, err := skynet.Listen("", addr)
-	log.Println("listening for skynet on", addr, tcpConn.LocalAddr(), "error:", err)
+	l, err := skynet.BindNet("tcp4", s.Addr, offset)
 	if err != nil {
 		s.chanOffset--
 		s.mux.Unlock()
 		s.reportErr(err)
-		return "", err
+		return 0, err
 	}
 	c := skyChannel{
 		Listener: l,
@@ -180,7 +148,7 @@ func (s *SkyServer) bindChannel(tcpConn net.Conn, out <-chan Frame) (string, err
 	go c.serve(s.ServeTimeout)
 	s.chanMap[offset] = c
 	s.mux.Unlock()
-	return addr, nil
+	return offset, nil
 }
 
 func (s *SkyServer) unbindChannel(offset uint64) {
@@ -212,9 +180,7 @@ type skyChannel struct {
 }
 
 func (c skyChannel) serve(timeout time.Duration) {
-	log.Println("accepting in chan")
-	conn, err := c.Listener.Accept()
-	log.Println("ACCEPTED chan conn, error:", err)
+	conn, err := c.Accept()
 	if err != nil {
 		return
 	}

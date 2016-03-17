@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,15 +24,14 @@ func TestAll(t *testing.T) {
 	log.Println("will connect in 3 sec...")
 	time.Sleep(3 * time.Second)
 
-	if err := Connect("127.0.0.1:14000"); err != nil {
+	var wg sync.WaitGroup
+	if err := Connect(&wg, "127.0.0.1:14000"); err != nil {
 		log.Fatalln("[ERR]:", err)
 	}
-
-	<-time.Tick(5 * time.Minute)
+	wg.Wait()
 }
 
 func SourceFn(req []byte) <-chan Source {
-	log.Println("calling source func for master")
 	out := make(chan Source, 1024)
 	for i := 0; i < 5; i++ {
 		src := source{n: i, data: req}
@@ -54,7 +54,7 @@ func (f frame) Bytes() []byte {
 }
 
 func (s *source) Run(d time.Duration) *source {
-	frames := make(chan Frame, 1024)
+	frames := make(chan Frame, 2)
 	go func() {
 		frames <- frame([]byte("wait for me!"))
 		time.Sleep(d)

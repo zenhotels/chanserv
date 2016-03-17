@@ -32,5 +32,5 @@ func tcpAddr(host string, port int) string {
 }
 
 func chanAddr(offset uint64) string {
-	return fmt.Sprintf(":5555%d", offset)
+	return fmt.Sprintf(":%d", offset)
 }

@@ -4,19 +4,15 @@ import (
 	"io"
 	"log"
 	"strings"
+	"sync"
 
 	"hotcore.in/skynet/skyapi"
 	"hotcore.in/skynet/skyapi/skyproto_v1"
 )
 
-func Connect(addr string) error {
-	// HACK: dial quicker than listen
-	// time.Sleep(time.Second)
-
-	skynet := skyproto_v1.SkyNetworkNew(nil)
-	log.Println("dialing to", addr, "skynet:12123123")
-	conn, err := skynet.Dial(addr, "skynet:12123123")
-	log.Println("dial error:", err)
+func Connect(wg *sync.WaitGroup, addr string) error {
+	skynet := skyproto_v1.SkyNetworkNew()
+	conn, err := skynet.Dial(addr, "chanserv:1000")
 	if err != nil {
 		return err
 	}
@@ -25,31 +21,33 @@ func Connect(addr string) error {
 	req := []byte("hello")
 	writeFrame(req, conn)
 
+	wg.Add(1)
+	defer wg.Done()
+
 	frame, err := readFrame(conn)
 	for err == nil {
 		reply := string(frame)
-		log.Println("master frame:", reply)
 		if !strings.HasPrefix(reply, "[HEAD]") {
-			discoverAddr(skynet, addr, reply)
+			wg.Add(1)
+			go discoverAddr(wg, skynet, addr, reply)
 		}
 		frame, err = readFrame(conn)
 	}
 	if err != io.EOF {
 		return err
 	}
-	log.Println("master closed")
 	return nil
 }
 
-func discoverAddr(skynet skyapi.Network, network, addr string) {
-	log.Println("dialing", addr, "in skynet over tcp", network)
+func discoverAddr(wg *sync.WaitGroup, skynet skyapi.Network, network, addr string) {
+	defer wg.Done()
+
 	conn, err := skynet.Dial(network, addr)
 	if err != nil {
 		log.Fatalln("[FATAL]: BOOM! Tried to discover an addr and found a mine:", err)
 	}
 	defer conn.Close()
 
-	log.Println("going for", addr)
 	frame, err := readFrame(conn)
 	for err == nil {
 		log.Println("reply from", addr, string(frame))
