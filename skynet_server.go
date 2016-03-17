@@ -52,7 +52,7 @@ func ListenAndServe(addr string, source SourceFunc) error {
 		Addr:   addr,
 		Source: source,
 	}
-	return server.Serve()
+	return server.ListenAndServe()
 }
 
 func Serve(l net.Listener, source SourceFunc) error {
@@ -64,6 +64,10 @@ func Serve(l net.Listener, source SourceFunc) error {
 		Source:   source,
 	}
 	return server.Serve()
+}
+
+func (s *SkyServer) ListenAndServe() error {
+	return s.Serve()
 }
 
 func (s *SkyServer) Serve() error {
