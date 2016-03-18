@@ -23,7 +23,7 @@ func readFrame(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	v := binary.LittleEndian.Uint64(buf)
-	frame := bytes.NewBuffer(make([]byte, v))
+	frame := bytes.NewBuffer(make([]byte, 0, v))
 	_, err := io.CopyN(frame, r, int64(v))
 	return frame.Bytes(), err
 }
