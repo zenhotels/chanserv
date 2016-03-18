@@ -64,16 +64,25 @@ func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
 
 	conn, err := s.network.DialTimeout(addr, "chanserv:1000", s.DialTimeout)
 	if err != nil {
-		return nil, err
+		sourceChan := make(chan Source, 1)
+		close(sourceChan)
+		return sourceChan, err
 	}
 	if err := writeFrame(conn, body); err != nil {
+		sourceChan := make(chan Source, 1)
+		close(sourceChan)
 		conn.Close()
-		return nil, err
+		return sourceChan, err
 	}
 	buf, err := readFrame(conn)
 	if err != nil {
+		sourceChan := make(chan Source, 1)
+		close(sourceChan)
 		conn.Close()
-		return nil, err
+		if err != io.EOF {
+			return sourceChan, err
+		}
+		return sourceChan, nil
 	}
 	sourceChan := make(chan Source, s.SourceBuffer)
 	go func() {

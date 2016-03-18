@@ -1,6 +1,7 @@
 package chanserv
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ func writeFrame(wr io.Writer, frame []byte) (err error) {
 	if _, err = wr.Write(buf); err != nil {
 		return
 	}
-	_, err = wr.Write(frame)
+	_, err = io.Copy(wr, bytes.NewReader(frame))
 	return
 }
 
@@ -22,9 +23,9 @@ func readFrame(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	v := binary.LittleEndian.Uint64(buf)
-	frame := make([]byte, v)
-	n, err := r.Read(frame)
-	return frame[:n], err
+	frame := bytes.NewBuffer(make([]byte, v))
+	_, err := io.CopyN(frame, r, int64(v))
+	return frame.Bytes(), err
 }
 
 func chanAddr(offset uint64) string {
