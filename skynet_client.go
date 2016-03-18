@@ -10,10 +10,12 @@ import (
 )
 
 type SkyClient struct {
-	DialTimeout  time.Duration
-	SourceBuffer int
-	FrameBuffer  int
-	OnError      func(err error)
+	DialTimeout   time.Duration
+	FrameTimeout  time.Duration
+	MasterTimeout time.Duration
+	SourceBuffer  int
+	FrameBuffer   int
+	OnError       func(err error)
 
 	network skyapi.Network
 	initCtl sync.Once
@@ -68,6 +70,10 @@ func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
 		close(sourceChan)
 		return sourceChan, err
 	}
+	if s.MasterTimeout > 0 {
+		conn.SetDeadline(time.Now().Add(s.MasterTimeout))
+	}
+
 	if err := writeFrame(conn, body); err != nil {
 		sourceChan := make(chan Source, 1)
 		close(sourceChan)
@@ -129,6 +135,9 @@ func (s *SkyClient) discover(network, addr string, out chan<- Frame) {
 	conn, err := s.network.DialTimeout(network, addr, s.DialTimeout)
 	if s.reportErr(err) {
 		return
+	}
+	if s.FrameTimeout > 0 {
+		conn.SetDeadline(time.Now().Add(s.FrameTimeout))
 	}
 	defer conn.Close()
 
