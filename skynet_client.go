@@ -10,12 +10,13 @@ import (
 )
 
 type SkyClient struct {
-	DialTimeout   time.Duration
-	FrameTimeout  time.Duration
-	MasterTimeout time.Duration
-	SourceBuffer  int
-	FrameBuffer   int
-	OnError       func(err error)
+	DialTimeout    time.Duration
+	FrameRTimeout  time.Duration
+	MasterRTimeout time.Duration
+	MasterWTimeout time.Duration
+	SourceBuffer   int
+	FrameBuffer    int
+	OnError        func(err error)
 
 	network skyapi.Network
 	initCtl sync.Once
@@ -70,15 +71,18 @@ func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
 		close(sourceChan)
 		return sourceChan, err
 	}
-	if s.MasterTimeout > 0 {
-		conn.SetDeadline(time.Now().Add(s.MasterTimeout))
+	if s.MasterWTimeout > 0 {
+		conn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 	}
-
 	if err := writeFrame(conn, body); err != nil {
 		sourceChan := make(chan Source, 1)
 		close(sourceChan)
 		conn.Close()
 		return sourceChan, err
+	}
+
+	if s.MasterRTimeout > 0 {
+		conn.SetReadDeadline(time.Now().Add(s.MasterRTimeout))
 	}
 	buf, err := readFrame(conn)
 	if err != nil {
@@ -99,6 +103,9 @@ func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
 			if expectHeader {
 				expectHeader = false
 				src.header = buf
+				if s.MasterRTimeout > 0 {
+					conn.SetReadDeadline(time.Now().Add(s.MasterRTimeout))
+				}
 				buf, err = readFrame(conn)
 				continue
 			}
@@ -108,6 +115,9 @@ func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
 			expectHeader = true
 			out = make(chan Frame, s.FrameBuffer)
 			src = source{out: out}
+			if s.MasterRTimeout > 0 {
+				conn.SetReadDeadline(time.Now().Add(s.MasterRTimeout))
+			}
 			buf, err = readFrame(conn)
 		}
 		conn.Close()
@@ -136,14 +146,18 @@ func (s *SkyClient) discover(network, addr string, out chan<- Frame) {
 	if s.reportErr(err) {
 		return
 	}
-	if s.FrameTimeout > 0 {
-		conn.SetDeadline(time.Now().Add(s.FrameTimeout))
-	}
 	defer conn.Close()
 
+	if s.FrameRTimeout > 0 {
+		conn.SetReadDeadline(time.Now().Add(s.FrameRTimeout))
+	}
 	buf, err := readFrame(conn)
 	for err == nil {
 		out <- frame(buf)
+
+		if s.FrameRTimeout > 0 {
+			conn.SetReadDeadline(time.Now().Add(s.FrameRTimeout))
+		}
 		buf, err = readFrame(conn)
 	}
 	if err != io.EOF {

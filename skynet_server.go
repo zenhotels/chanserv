@@ -21,6 +21,9 @@ type SkyServer struct {
 	CriticalErrMass   int
 	OnCriticalErrMass func(err error)
 
+	FrameWTimeout  time.Duration
+	SourceRTimeout time.Duration
+	MasterRTimeout time.Duration
 	MasterWTimeout time.Duration
 	ServeTimeout   time.Duration
 
@@ -108,14 +111,17 @@ func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 	}
 	defer masterConn.Close()
 
+	if s.MasterRTimeout > 0 {
+		masterConn.SetReadDeadline(time.Now().Add(s.MasterRTimeout))
+	}
 	reqBody, err := readFrame(masterConn)
 	if s.reportErr(err) {
 		return
 	}
 
 	var t *time.Timer
-	if s.MasterWTimeout > 0 {
-		t = time.NewTimer(s.MasterWTimeout)
+	if s.SourceRTimeout > 0 {
+		t = time.NewTimer(s.SourceRTimeout)
 	} else {
 		t = time.NewTimer(time.Minute)
 		t.Stop()
@@ -131,18 +137,21 @@ func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 				// sourcing is over
 				return
 			}
+			if s.SourceRTimeout > 0 {
+				t.Reset(s.SourceRTimeout)
+			}
 			port, err := s.bindChannel(out.Out())
 			if s.reportErr(err) {
 				continue
+			}
+			if s.MasterWTimeout > 0 {
+				masterConn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 			}
 			addr := []byte(fmt.Sprintf("chanserv:%d", port))
 			if !s.reportErr(writeFrame(masterConn, out.Header())) {
 				if s.reportErr(writeFrame(masterConn, addr)) {
 					continue
 				}
-			}
-			if s.MasterWTimeout > 0 {
-				t.Reset(s.MasterWTimeout)
 			}
 		}
 	}
@@ -178,6 +187,7 @@ func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
 		onClosed: func() {
 			s.unbindChannel(offset)
 		},
+		wTimeout: s.FrameWTimeout,
 	}
 	if s.OnChanError != nil {
 		c.onError = s.OnChanError
@@ -213,6 +223,7 @@ type skyChannel struct {
 	outChan  <-chan Frame
 	onClosed func()
 	onError  func(err error)
+	wTimeout time.Duration
 }
 
 func (c skyChannel) serve(timeout time.Duration) {
@@ -228,6 +239,9 @@ func (c skyChannel) serve(timeout time.Duration) {
 	defer conn.Close()
 	defer c.onClosed()
 	for frame := range c.outChan {
+		if c.wTimeout > 0 {
+			conn.SetWriteDeadline(time.Now().Add(c.wTimeout))
+		}
 		if err := writeFrame(conn, frame.Bytes()); err != nil {
 			c.reportErr(err)
 		}
