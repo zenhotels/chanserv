@@ -169,9 +169,6 @@ func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
 		listener, err = s.network.Bind(s.Listener, offset)
 	} else {
 		listener, err = s.network.BindNet("tcp4", s.Addr, offset)
-		if err == nil {
-			defer listener.Close()
-		}
 	}
 	if err != nil {
 		s.chanOffset--
