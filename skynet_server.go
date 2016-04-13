@@ -21,11 +21,12 @@ type SkyServer struct {
 	CriticalErrMass   int
 	OnCriticalErrMass func(err error)
 
-	FrameWTimeout  time.Duration
-	SourceRTimeout time.Duration
-	MasterRTimeout time.Duration
-	MasterWTimeout time.Duration
-	ServeTimeout   time.Duration
+	FrameWTimeout       time.Duration
+	SourceRTimeout      time.Duration
+	MasterRTimeout      time.Duration
+	MasterWTimeout      time.Duration
+	ServeTimeout        time.Duration
+	FramesAcceptTimeout time.Duration
 
 	chanOffset uint64
 	chanMap    map[uint64]skyChannel
@@ -36,6 +37,9 @@ type SkyServer struct {
 
 func (s *SkyServer) init() {
 	s.initCtl.Do(func() {
+		if s.FramesAcceptTimeout == 0 {
+			s.FramesAcceptTimeout = 30 * time.Second
+		}
 		if s.CriticalErrMass == 0 {
 			s.CriticalErrMass = 10
 		}
@@ -185,6 +189,7 @@ func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
 			s.unbindChannel(offset)
 		},
 		wTimeout: s.FrameWTimeout,
+		aTimeout: s.FramesAcceptTimeout,
 	}
 	if s.OnChanError != nil {
 		c.onError = s.OnChanError
@@ -221,12 +226,13 @@ type skyChannel struct {
 	onClosed func()
 	onError  func(err error)
 	wTimeout time.Duration
+	aTimeout time.Duration
 }
 
 func (c skyChannel) serve(timeout time.Duration) {
 	defer c.Close()
 
-	conn, err := c.Accept()
+	conn, err := skyapi.AcceptTimeout(c, c.aTimeout)
 	if err != nil {
 		return
 	}
