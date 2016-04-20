@@ -79,16 +79,6 @@ func ListenAndServe(addr string, source SourceFunc) error {
 	return server.ListenAndServe()
 }
 
-func Serve(l net.Listener, source SourceFunc) error {
-	if l == nil {
-		return errors.New("chanserv: no valid listener provided")
-	}
-	server := &SkyServer{
-		Source: source,
-	}
-	return server.serve(l)
-}
-
 func (s *SkyServer) ListenAndServe() error {
 	s.init()
 

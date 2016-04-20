@@ -109,7 +109,7 @@ func (s *SkyClient) DialAndPost(addr string, body []byte) (<-chan Source, error)
 	s.init()
 	conn, err := s.network.DialTimeout(addr, "chanserv:1000", s.DialTimeout)
 	if err != nil {
-		sourceChan := make(chan Source, 1)
+		sourceChan := make(chan Source)
 		close(sourceChan)
 		return sourceChan, err
 	}
@@ -121,7 +121,7 @@ func (s *SkyClient) post(conn net.Conn, body []byte) (<-chan Source, error) {
 		conn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 	}
 	if err := writeFrame(conn, body); err != nil {
-		sourceChan := make(chan Source, 1)
+		sourceChan := make(chan Source)
 		close(sourceChan)
 		conn.Close()
 		return sourceChan, err
@@ -132,7 +132,7 @@ func (s *SkyClient) post(conn net.Conn, body []byte) (<-chan Source, error) {
 	}
 	buf, err := readFrame(conn)
 	if err != nil {
-		sourceChan := make(chan Source, 1)
+		sourceChan := make(chan Source)
 		close(sourceChan)
 		conn.Close()
 		if err != io.EOF {
