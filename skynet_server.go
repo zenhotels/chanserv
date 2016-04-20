@@ -21,8 +21,7 @@ type SkyServer struct {
 
 	AppName      string
 	AppTags      []string
-	RegistryHost string
-	RegistryPort int
+	RegistryAddr string
 
 	CriticalErrMass   int
 	OnCriticalErrMass func(err error)
@@ -60,13 +59,13 @@ func (s *SkyServer) init() {
 	})
 }
 
-func RegistryAndServe(regHost string, regPort int, source SourceFunc, appName string, tags ...string) error {
+func RegistryAndServe(addr string, source SourceFunc, appName string, tags ...string) error {
 	server := &SkyServer{
-		RegistryHost: regHost,
-		RegistryPort: regPort,
-		Source:       source,
-		AppName:      appName,
-		AppTags:      tags,
+		RegistryAddr: addr,
+
+		Source:  source,
+		AppName: appName,
+		AppTags: tags,
 	}
 	return server.RegistryAndServe()
 }
@@ -104,19 +103,10 @@ func (s *SkyServer) RegistryAndServe() error {
 
 	if len(s.AppName) == 0 {
 		return errors.New("no app name provided")
-	} else if len(s.RegistryHost) == 0 {
-		return errors.New("no registry host provided")
-	} else if s.RegistryPort <= 0 {
-		return errors.New("no registry port provided")
+	} else if len(s.RegistryAddr) == 0 {
+		return errors.New("no registry address provided")
 	}
-
-	tcpAddr := fmt.Sprintf("%s:%d", s.RegistryHost, s.RegistryPort)
-	skyAddr := fmt.Sprintf("skynet:%d", s.RegistryPort)
-	regAddr, err := s.network.MakeAddr(tcpAddr, skyAddr)
-	if err != nil {
-		return err
-	}
-	regNet, err := registry.RegistryNetwork(s.network, regAddr, s.AppTags...)
+	regNet, err := registry.RegistryNetwork(s.network, s.RegistryAddr, s.AppTags...)
 	if err != nil {
 		return err
 	}

@@ -24,8 +24,7 @@ type SkyClient struct {
 
 	AppName      string
 	AppTags      []string
-	RegistryHost string
-	RegistryPort int
+	RegistryAddr string
 
 	network skyapi.Network
 	initCtl sync.Once
@@ -81,18 +80,10 @@ func (s *SkyClient) LookupAndPost(body []byte) (<-chan Source, error) {
 	}
 	if len(s.AppName) == 0 {
 		return retErr(errors.New("no app name provided"))
-	} else if len(s.RegistryHost) == 0 {
-		return retErr(errors.New("no registry host provided"))
-	} else if s.RegistryPort <= 0 {
-		return retErr(errors.New("no registry port provided"))
+	} else if len(s.RegistryAddr) == 0 {
+		return retErr(errors.New("no registry address provided"))
 	}
-	tcpAddr := fmt.Sprintf("%s:%d", s.RegistryHost, s.RegistryPort)
-	skyAddr := fmt.Sprintf("skynet:%d", s.RegistryPort)
-	regAddr, err := s.network.MakeAddr(tcpAddr, skyAddr)
-	if err != nil {
-		return retErr(err)
-	}
-	regNet, err := registry.RegistryNetwork(s.network, regAddr, s.AppTags...)
+	regNet, err := registry.RegistryNetwork(s.network, s.RegistryAddr, s.AppTags...)
 	if err != nil {
 		return retErr(err)
 	}
