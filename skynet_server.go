@@ -133,10 +133,10 @@ func (s *SkyServer) RegistryAndServe() error {
 
 	var listener net.Listener
 	if s.Listener != nil {
-		listener, err = regNet.Bind(s.Listener, 1000)
+		listener, err = regNet.Bind(s.Listener, 0)
 	} else {
-		networkAddr := fmt.Sprintf("tcp4://registry/%s", s.AppName)
-		listener, err = regNet.BindNet(networkAddr, s.Addr, 1000)
+		registryEntry := fmt.Sprintf("tcp4://registry/%s", s.AppName)
+		listener, err = regNet.BindNet(registryEntry, s.Addr, 0)
 		if err == nil {
 			defer listener.Close()
 		}

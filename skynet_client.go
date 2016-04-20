@@ -1,12 +1,16 @@
 package chanserv
 
 import (
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
 	"hotcore.in/skynet/skyapi"
 	"hotcore.in/skynet/skyapi/skyproto_v1"
+	"hotcore.in/skynet/skylab/registry"
 )
 
 type SkyClient struct {
@@ -17,6 +21,11 @@ type SkyClient struct {
 	SourceBuffer   int
 	FrameBuffer    int
 	OnError        func(err error)
+
+	AppName      string
+	AppTags      []string
+	RegistryHost string
+	RegistryPort int
 
 	network skyapi.Network
 	initCtl sync.Once
@@ -59,18 +68,55 @@ func (f frame) Bytes() []byte {
 }
 
 func Post(addr string, body []byte) (<-chan Source, error) {
-	return defaultClient.Post(addr, body)
+	return defaultClient.DialAndPost(addr, body)
 }
 
-func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
+func (s *SkyClient) LookupAndPost(body []byte) (<-chan Source, error) {
 	s.init()
 
+	retErr := func(err error) (<-chan Source, error) {
+		sourceChan := make(chan Source)
+		close(sourceChan)
+		return sourceChan, err
+	}
+	if len(s.AppName) == 0 {
+		return retErr(errors.New("no app name provided"))
+	} else if len(s.RegistryHost) == 0 {
+		return retErr(errors.New("no registry host provided"))
+	} else if s.RegistryPort <= 0 {
+		return retErr(errors.New("no registry port provided"))
+	}
+	tcpAddr := fmt.Sprintf("%s:%d", s.RegistryHost, s.RegistryPort)
+	skyAddr := fmt.Sprintf("skynet:%d", s.RegistryPort)
+	regAddr, err := s.network.MakeAddr(tcpAddr, skyAddr)
+	if err != nil {
+		return retErr(err)
+	}
+	regNet, err := registry.RegistryNetwork(s.network, regAddr, s.AppTags...)
+	if err != nil {
+		return retErr(err)
+	}
+	registryEntry := fmt.Sprintf("tcp4://registry/%s", s.AppName)
+	conn, err := regNet.DialTimeout(registryEntry, "chanserv", s.DialTimeout)
+	if err != nil {
+		return retErr(err)
+	}
+
+	return s.post(conn, body)
+}
+
+func (s *SkyClient) DialAndPost(addr string, body []byte) (<-chan Source, error) {
+	s.init()
 	conn, err := s.network.DialTimeout(addr, "chanserv:1000", s.DialTimeout)
 	if err != nil {
 		sourceChan := make(chan Source, 1)
 		close(sourceChan)
 		return sourceChan, err
 	}
+	return s.post(conn, body)
+}
+
+func (s *SkyClient) post(conn net.Conn, body []byte) (<-chan Source, error) {
 	if s.MasterWTimeout > 0 {
 		conn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 	}
@@ -109,7 +155,7 @@ func (s *SkyClient) Post(addr string, body []byte) (<-chan Source, error) {
 				buf, err = readFrame(conn)
 				continue
 			}
-			go s.discover(addr, string(buf), out)
+			go s.discover(conn.RemoteAddr().Network(), string(buf), out)
 			sourceChan <- src
 
 			expectHeader = true
