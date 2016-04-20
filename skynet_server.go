@@ -9,6 +9,7 @@ import (
 
 	"hotcore.in/skynet/skyapi"
 	"hotcore.in/skynet/skyapi/skyproto_v1"
+	"hotcore.in/skynet/skylab/registry"
 )
 
 type SkyServer struct {
@@ -17,6 +18,11 @@ type SkyServer struct {
 	Source      SourceFunc
 	OnError     func(err error)
 	OnChanError func(err error)
+
+	AppName      string
+	AppTags      []string
+	RegistryHost string
+	RegistryPort int
 
 	CriticalErrMass   int
 	OnCriticalErrMass func(err error)
@@ -54,6 +60,17 @@ func (s *SkyServer) init() {
 	})
 }
 
+func RegistryAndServe(regHost string, regPort int, source SourceFunc, appName string, tags ...string) error {
+	server := &SkyServer{
+		RegistryHost: regHost,
+		RegistryPort: regPort,
+		Source:       source,
+		AppName:      appName,
+		AppTags:      tags,
+	}
+	return server.RegistryAndServe()
+}
+
 func ListenAndServe(addr string, source SourceFunc) error {
 	server := &SkyServer{
 		Addr:   addr,
@@ -67,17 +84,12 @@ func Serve(l net.Listener, source SourceFunc) error {
 		return errors.New("chanserv: no valid listener provided")
 	}
 	server := &SkyServer{
-		Listener: l,
-		Source:   source,
+		Source: source,
 	}
-	return server.Serve()
+	return server.serve(l)
 }
 
 func (s *SkyServer) ListenAndServe() error {
-	return s.Serve()
-}
-
-func (s *SkyServer) Serve() error {
 	s.init()
 
 	var listener net.Listener
@@ -94,6 +106,49 @@ func (s *SkyServer) Serve() error {
 		return err
 	}
 
+	return s.serve(listener)
+}
+
+func (s *SkyServer) RegistryAndServe() error {
+	s.init()
+
+	if len(s.AppName) == 0 {
+		return errors.New("no app name provided")
+	} else if len(s.RegistryHost) == 0 {
+		return errors.New("no registry host provided")
+	} else if s.RegistryPort <= 0 {
+		return errors.New("no registry port provided")
+	}
+
+	tcpAddr := fmt.Sprintf("%s:%d", s.RegistryHost, s.RegistryPort)
+	skyAddr := fmt.Sprintf("skynet:%d", s.RegistryPort)
+	regAddr, err := s.network.MakeAddr(tcpAddr, skyAddr)
+	if err != nil {
+		return err
+	}
+	regNet, err := registry.RegistryNetwork(s.network, regAddr, s.AppTags...)
+	if err != nil {
+		return err
+	}
+
+	var listener net.Listener
+	if s.Listener != nil {
+		listener, err = regNet.Bind(s.Listener, 1000)
+	} else {
+		networkAddr := fmt.Sprintf("tcp4://registry/%s", s.AppName)
+		listener, err = regNet.BindNet(networkAddr, "0.0.0.0:0", 1000)
+		if err == nil {
+			defer listener.Close()
+		}
+	}
+	if err != nil {
+		return err
+	}
+
+	return s.serve(listener)
+}
+
+func (s *SkyServer) serve(listener net.Listener) error {
 	var errMass int
 	for {
 		masterConn, err := listener.Accept()
