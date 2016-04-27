@@ -62,7 +62,7 @@ func TestChanserv(t *testing.T) {
 func SourceFn(req []byte) <-chan Source {
 	out := make(chan Source, 5)
 	for i := 0; i < 5; i++ {
-		src := testSource{n: i, data: req}
+		src := testSource{n: i + 1, data: req}
 		out <- src.Run(time.Second*time.Duration(i+1) + 3)
 	}
 	close(out)
