@@ -1,15 +1,12 @@
 package chanserv
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"hotcore.in/skynet/skyapi"
-	"hotcore.in/skynet/skyapi/skyproto_v1"
-	"hotcore.in/skynet/skylab/registry"
 )
 
 type SkyServer struct {
@@ -36,7 +33,7 @@ type SkyServer struct {
 	chanOffset uint64
 	chanMap    map[uint64]skyChannel
 	mux        sync.RWMutex
-	network    skyapi.Network
+	net        skyapi.Multiplexer
 	initCtl    sync.Once
 }
 
@@ -55,20 +52,19 @@ func (s *SkyServer) init() {
 		}
 		s.chanOffset = 1000
 		s.chanMap = make(map[uint64]skyChannel)
-		s.network = skyproto_v1.SkyNetworkNew()
 	})
 }
 
-func RegistryAndServe(addr string, source SourceFunc, appName string, tags ...string) error {
-	server := &SkyServer{
-		RegistryAddr: addr,
+// func RegistryAndServe(addr string, source SourceFunc, appName string, tags ...string) error {
+// 	server := &SkyServer{
+// 		RegistryAddr: addr,
 
-		Source:  source,
-		AppName: appName,
-		AppTags: tags,
-	}
-	return server.RegistryAndServe()
-}
+// 		Source:  source,
+// 		AppName: appName,
+// 		AppTags: tags,
+// 	}
+// 	return server.RegistryAndServe()
+// }
 
 func ListenAndServe(addr string, source SourceFunc) error {
 	server := &SkyServer{
@@ -81,54 +77,57 @@ func ListenAndServe(addr string, source SourceFunc) error {
 func (s *SkyServer) ListenAndServe() error {
 	s.init()
 
-	var listener net.Listener
-	var err error
 	if s.Listener != nil {
-		listener, err = s.network.Bind(s.Listener, 1000)
-	} else {
-		listener, err = s.network.BindNet("tcp4", s.Addr, 1000)
-		if err == nil {
-			defer listener.Close()
-		}
+		s.serve(s.Listener)
+		return nil
 	}
+	if err := s.net.ListenAndServe("tcp4", s.Addr); err != nil {
+		return err
+	}
+	if err := s.net.Join("tcp4", s.Addr); err != nil {
+		return err
+	}
+	l, err := s.net.Bind("", "chanserv:1000")
 	if err != nil {
 		return err
 	}
+	defer l.Close()
 
-	return s.serve(listener)
+	s.serve(l)
+	return nil
 }
 
-func (s *SkyServer) RegistryAndServe() error {
-	s.init()
+// func (s *SkyServer) RegistryAndServe() error {
+// 	s.init()
 
-	if len(s.AppName) == 0 {
-		return errors.New("no app name provided")
-	} else if len(s.RegistryAddr) == 0 {
-		return errors.New("no registry address provided")
-	}
-	regNet, err := registry.RegistryNetwork(s.network, s.RegistryAddr, s.AppTags...)
-	if err != nil {
-		return err
-	}
+// 	if len(s.AppName) == 0 {
+// 		return errors.New("no app name provided")
+// 	} else if len(s.RegistryAddr) == 0 {
+// 		return errors.New("no registry address provided")
+// 	}
+// 	regNet, err := registry.RegistryNetwork(s.network, s.RegistryAddr, s.AppTags...)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	var listener net.Listener
-	if s.Listener != nil {
-		listener, err = regNet.Bind(s.Listener, 0)
-	} else {
-		registryEntry := fmt.Sprintf("tcp4://registry/%s", s.AppName)
-		listener, err = regNet.BindNet(registryEntry, s.Addr, 0)
-		if err == nil {
-			defer listener.Close()
-		}
-	}
-	if err != nil {
-		return err
-	}
+// 	var listener skyapi.Listener
+// 	if s.Listener != nil {
+// 		listener, err = regNet.Bind(s.Listener, 0)
+// 	} else {
+// 		registryEntry := fmt.Sprintf("tcp4://registry/%s", s.AppName)
+// 		listener, err = regNet.BindNet(registryEntry, s.Addr, 0)
+// 		if err == nil {
+// 			defer listener.Close()
+// 		}
+// 	}
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return s.serve(listener)
-}
+// 	return s.serve(listener)
+// }
 
-func (s *SkyServer) serve(listener net.Listener) error {
+func (s *SkyServer) serve(listener net.Listener) {
 	var errMass int
 	for {
 		masterConn, err := listener.Accept()
@@ -179,14 +178,19 @@ func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 			if s.SourceRTimeout > 0 {
 				t.Reset(s.SourceRTimeout)
 			}
-			port, err := s.bindChannel(out.Out())
+			host, _, err := net.SplitHostPort(masterConn.LocalAddr().String())
+			if err != nil {
+				// -> skynet is broken
+				panic(err)
+			}
+			port, err := s.bindChannel(host, out.Out())
 			if s.reportErr(err) {
 				continue
 			}
 			if s.MasterWTimeout > 0 {
 				masterConn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 			}
-			addr := []byte(fmt.Sprintf("chanserv:%d", port))
+			addr := []byte(fmt.Sprintf("%s:%d", host, port))
 			if !s.reportErr(writeFrame(masterConn, out.Header())) {
 				if s.reportErr(writeFrame(masterConn, addr)) {
 					continue
@@ -196,22 +200,16 @@ func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 	}
 }
 
-func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
+func (s *SkyServer) bindChannel(host string, out <-chan Frame) (uint64, error) {
 	s.mux.Lock()
+	defer s.mux.Unlock()
 
 	s.chanOffset++
 	offset := s.chanOffset
-
-	var listener net.Listener
-	var err error
-	if s.Listener != nil {
-		listener, err = s.network.Bind(s.Listener, offset)
-	} else {
-		listener, err = s.network.BindNet("tcp4", s.Addr, offset)
-	}
+	vAddr := fmt.Sprintf("%s:%d", host, offset)
+	listener, err := s.net.Bind("", vAddr)
 	if err != nil {
 		s.chanOffset--
-		s.mux.Unlock()
 		s.reportErr(err)
 		return 0, err
 	}
@@ -231,7 +229,6 @@ func (s *SkyServer) bindChannel(out <-chan Frame) (uint64, error) {
 	}
 	go c.serve(s.ServeTimeout)
 	s.chanMap[offset] = c
-	s.mux.Unlock()
 	return offset, nil
 }
 
