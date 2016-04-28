@@ -1,6 +1,7 @@
 package chanserv
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -91,9 +92,24 @@ func Post(addr string, body []byte) (<-chan Source, error) {
 // 	return s.post(conn, body)
 // }
 
-func (s *SkyClient) DialAndPost(addr string, body []byte) (<-chan Source, error) {
+type Options struct {
+	Bucket string
+}
+
+func (o *Options) RegistryBucket() string {
+	if len(o.Bucket) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("registry://%s", o.Bucket)
+}
+
+func (s *SkyClient) DialAndPost(addr string, body []byte, opt ...Options) (<-chan Source, error) {
 	s.init()
 
+	var o Options
+	if len(opt) > 0 {
+		o = opt[0]
+	}
 	retErr := func(err error) (<-chan Source, error) {
 		sourceChan := make(chan Source)
 		close(sourceChan)
@@ -103,7 +119,8 @@ func (s *SkyClient) DialAndPost(addr string, body []byte) (<-chan Source, error)
 	if err := s.net.Join("tcp4", addr); err != nil {
 		return retErr(err)
 	}
-	conn, err := s.net.DialTimeout("", ":1000", s.DialTimeout)
+	network := o.RegistryBucket()
+	conn, err := s.net.DialTimeout(network, ":1000", s.DialTimeout)
 	if err != nil {
 		return retErr(err)
 	}

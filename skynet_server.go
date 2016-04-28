@@ -11,6 +11,7 @@ import (
 
 type SkyServer struct {
 	Addr        string
+	SkyAddr     string
 	Listener    net.Listener
 	Source      SourceFunc
 	OnError     func(err error)
@@ -33,7 +34,6 @@ type SkyServer struct {
 	chanOffset uint64
 	chanMap    map[uint64]skyChannel
 	mux        sync.RWMutex
-	net        skyapi.Multiplexer
 	initCtl    sync.Once
 }
 
@@ -50,7 +50,9 @@ func (s *SkyServer) init() {
 				time.Sleep(30 * time.Second)
 			}
 		}
-		s.chanOffset = 1000
+		// ports <= 65536 are used for service discovery, thus
+		// everything above 100K can be for miscellaneous purposes.
+		s.chanOffset = 100000
 		s.chanMap = make(map[uint64]skyChannel)
 	})
 }
@@ -81,13 +83,17 @@ func (s *SkyServer) ListenAndServe() error {
 		s.serve(s.Listener)
 		return nil
 	}
-	if err := s.net.ListenAndServe("tcp4", s.Addr); err != nil {
+	if err := skyapi.SkyNet.ListenAndServe("tcp4", s.Addr); err != nil {
 		return err
 	}
-	if err := s.net.Join("tcp4", s.Addr); err != nil {
+	if err := skyapi.SkyNet.Join("tcp4", s.Addr); err != nil {
 		return err
 	}
-	l, err := s.net.Bind("", "chanserv:1000")
+	skyAddr := "chanserv:1000"
+	if len(s.SkyAddr) > 0 {
+		skyAddr = s.SkyAddr
+	}
+	l, err := skyapi.SkyNet.Bind("", skyAddr)
 	if err != nil {
 		return err
 	}
@@ -105,7 +111,7 @@ func (s *SkyServer) ListenAndServe() error {
 // 	} else if len(s.RegistryAddr) == 0 {
 // 		return errors.New("no registry address provided")
 // 	}
-// 	regNet, err := registry.RegistryNetwork(s.network, s.RegistryAddr, s.AppTags...)
+// 	regNet, err := registry.RegistryNetwork(skyapi.SkyNetwork, s.RegistryAddr, s.AppTags...)
 // 	if err != nil {
 // 		return err
 // 	}
@@ -207,7 +213,7 @@ func (s *SkyServer) bindChannel(host string, out <-chan Frame) (uint64, error) {
 	s.chanOffset++
 	offset := s.chanOffset
 	vAddr := fmt.Sprintf("%s:%d", host, offset)
-	listener, err := s.net.Bind("", vAddr)
+	listener, err := skyapi.SkyNet.Bind("", vAddr)
 	if err != nil {
 		s.chanOffset--
 		s.reportErr(err)

@@ -26,7 +26,9 @@ func TestChanserv(t *testing.T) {
 			t.Fatal("[ERR]", err)
 		},
 	}
-	sources, err := cli.DialAndPost("localhost:5555", []byte("hello"))
+	sources, err := cli.DialAndPost("localhost:5555", []byte("hello"), Options{
+		Bucket: "deadbeef",
+	})
 	if err != nil {
 		log.Fatalln(err)
 	}
