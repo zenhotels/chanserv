@@ -87,23 +87,25 @@ func checkSources(t *testing.T, sources <-chan Source) {
 			go func(srcs int, src Source) {
 				var frames int
 				for frame := range src.Out() {
-					log.Printf("[FRAME %d from @%d] %d", frames, srcs, len(frame.Bytes()))
+					if len(frame.Bytes()) > 64 {
+						log.Printf("[FRAME %d from @%d] len: %d", frames, srcs, len(frame.Bytes()))
+					} else {
+						log.Printf("[FRAME %d from @%d] %s", frames, srcs, frame.Bytes())
+					}
 					frames++
 					wg.Done()
 				}
-				log.Println("CLOSED", srcs)
+				log.Printf("[CLOSED @%d]", srcs)
 			}(srcs, src)
 		}
 		wg.Wait()
 		close(done)
 	}()
 
-	start := time.Now()
 	select {
-	case <-time.Tick(300 * time.Second):
-		t.Fatal("timeout")
+	case <-time.Tick(20 * time.Second):
+		t.Fatal("test timeout (waitgroup deadlock?)")
 	case <-done:
-		log.Println("done in", time.Since(start))
 	}
 }
 
@@ -111,7 +113,7 @@ func SourceFn(req []byte) <-chan Source {
 	out := make(chan Source, 10)
 	for i := 0; i < 10; i++ {
 		src := testSource{n: i + 1, data: req}
-		out <- src.Run(time.Second*time.Duration(i+1) + 3)
+		out <- src.Run(time.Millisecond*time.Duration(100*i) + 100)
 	}
 	close(out)
 	return out
@@ -126,9 +128,9 @@ type testSource struct {
 func (s *testSource) Run(d time.Duration) *testSource {
 	frames := make(chan Frame, 2)
 	go func() {
-		frames <- frame([]byte(strings.Repeat("A", 99999)))
-		time.Sleep(300 * time.Millisecond)
-		frames <- frame([]byte(strings.Repeat("B", 180200)))
+		frames <- frame([]byte("wait for me!"))
+		time.Sleep(d)
+		frames <- frame([]byte(strings.Repeat("B", 180*1024)))
 		close(frames)
 	}()
 	s.frames = frames
