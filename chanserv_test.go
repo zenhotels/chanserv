@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -30,9 +31,50 @@ func TestChanserv(t *testing.T) {
 		Bucket: "deadbeef",
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	checkSources(t, sources)
+}
+
+var (
+	registryAddr = "route.hotcore.in:10000"
+	testName     = "chanserv_test"
+	testEnv      = "local"
+)
+
+func init() {
+	if host, err := os.Hostname(); err == nil {
+		testEnv = host
+	}
+}
+
+func TestChanservRegistry(t *testing.T) {
+	go func() {
+		log.Println("Registering", testName, "on", registryAddr, "under env", testEnv)
+		if err := JoinAndServe(registryAddr, SourceFn, testName, testEnv); err != nil {
+			log.Fatalln(err)
+		}
+	}()
+
+	cli := SkyClient{
+		AppName:      testName,
+		AppTags:      []string{testEnv},
+		RegistryAddr: registryAddr,
+		DialTimeout:  2 * time.Second,
+		OnError: func(err error) {
+			t.Fatal("[ERR]", err)
+		},
+	}
+	sources, err := cli.LookupAndPost([]byte("hello"), Options{
+		Bucket: "deadbeef",
+	})
+	if err != nil {
 		log.Fatalln(err)
 	}
+	checkSources(t, sources)
+}
 
+func checkSources(t *testing.T, sources <-chan Source) {
 	var wg sync.WaitGroup
 	done := make(chan struct{})
 	go func() {

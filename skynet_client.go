@@ -1,6 +1,7 @@
 package chanserv
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -23,14 +24,15 @@ type SkyClient struct {
 	AppTags      []string
 	RegistryAddr string
 
-	net     skyapi.Multiplexer
-	initCtl sync.Once
+	initOnce sync.Once
+	joinOnce sync.Once
+	net      skyapi.Multiplexer
 }
 
 var defaultClient = &SkyClient{}
 
 func (s *SkyClient) init() {
-	s.initCtl.Do(func() {
+	s.initOnce.Do(func() {
 		if s.DialTimeout == 0 {
 			s.DialTimeout = 10 * time.Second
 		}
@@ -40,6 +42,7 @@ func (s *SkyClient) init() {
 		if s.FrameBuffer == 0 {
 			s.FrameBuffer = 1024
 		}
+		s.net = skyapi.SkyNet.WithEnv(s.AppTags...)
 	})
 }
 
@@ -66,31 +69,40 @@ func Post(addr string, body []byte) (<-chan Source, error) {
 	return defaultClient.DialAndPost(addr, body)
 }
 
-// func (s *SkyClient) LookupAndPost(body []byte) (<-chan Source, error) {
-// 	s.init()
+func (s *SkyClient) LookupAndPost(body []byte, opt ...Options) (<-chan Source, error) {
+	s.init()
 
-// 	retErr := func(err error) (<-chan Source, error) {
-// 		sourceChan := make(chan Source)
-// 		close(sourceChan)
-// 		return sourceChan, err
-// 	}
-// 	if len(s.AppName) == 0 {
-// 		return retErr(errors.New("no app name provided"))
-// 	} else if len(s.RegistryAddr) == 0 {
-// 		return retErr(errors.New("no registry address provided"))
-// 	}
-// 	regNet, err := registry.RegistryNetwork(s.network, s.RegistryAddr, s.AppTags...)
-// 	if err != nil {
-// 		return retErr(err)
-// 	}
-// 	registryEntry := fmt.Sprintf("tcp4://registry/%s", s.AppName)
-// 	conn, err := regNet.DialTimeout(registryEntry, "chanserv", s.DialTimeout)
-// 	if err != nil {
-// 		return retErr(err)
-// 	}
+	var o Options
+	if len(opt) > 0 {
+		o = opt[0]
+	}
+	retErr := func(err error) (<-chan Source, error) {
+		sourceChan := make(chan Source)
+		close(sourceChan)
+		return sourceChan, err
+	}
+	if len(s.AppName) == 0 {
+		return retErr(errors.New("no app name provided"))
+	} else if len(s.RegistryAddr) == 0 {
+		return retErr(errors.New("no registry addr provided"))
+	}
 
-// 	return s.post(conn, body)
-// }
+	var err error
+	s.joinOnce.Do(func() {
+		err = s.net.Join("tcp4", s.RegistryAddr)
+	})
+	if err != nil {
+		return retErr(err)
+	}
+
+	network := o.RegistryBucket()
+	conn, err := s.net.DialTimeout(network, s.AppName, s.DialTimeout)
+	if err != nil {
+		return retErr(err)
+	}
+
+	return s.post(s.net, conn, body)
+}
 
 type Options struct {
 	Bucket string
@@ -116,18 +128,22 @@ func (s *SkyClient) DialAndPost(addr string, body []byte, opt ...Options) (<-cha
 		return sourceChan, err
 	}
 
-	if err := s.net.Join("tcp4", addr); err != nil {
+	net := skyapi.SkyNet.New()
+	if err := net.Join("tcp4", addr); err != nil {
 		return retErr(err)
 	}
 	network := o.RegistryBucket()
-	conn, err := s.net.DialTimeout(network, ":1000", s.DialTimeout)
+	conn, err := net.DialTimeout(network, "chanserv:1000", s.DialTimeout)
 	if err != nil {
 		return retErr(err)
 	}
-	return s.post(conn, body)
+
+	return s.post(net, conn, body)
 }
 
-func (s *SkyClient) post(conn net.Conn, body []byte) (<-chan Source, error) {
+func (s *SkyClient) post(net skyapi.Multiplexer,
+	conn net.Conn, body []byte) (<-chan Source, error) {
+
 	if s.MasterWTimeout > 0 {
 		conn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 	}
@@ -166,7 +182,7 @@ func (s *SkyClient) post(conn net.Conn, body []byte) (<-chan Source, error) {
 				buf, err = readFrame(conn)
 				continue
 			}
-			go s.discover(string(buf), out)
+			go s.discover(net, string(buf), out)
 			sourceChan <- src
 
 			expectHeader = true
@@ -196,10 +212,10 @@ func (s *SkyClient) reportErr(err error) bool {
 	return false
 }
 
-func (s *SkyClient) discover(addr string, out chan<- Frame) {
+func (s *SkyClient) discover(net skyapi.Multiplexer, addr string, out chan<- Frame) {
 	defer close(out)
 
-	conn, err := s.net.DialTimeout("", addr, s.DialTimeout)
+	conn, err := net.DialTimeout("", addr, s.DialTimeout)
 	if s.reportErr(err) {
 		return
 	}

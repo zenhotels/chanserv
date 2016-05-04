@@ -1,6 +1,7 @@
 package chanserv
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -11,7 +12,6 @@ import (
 
 type SkyServer struct {
 	Addr        string
-	SkyAddr     string
 	Listener    net.Listener
 	Source      SourceFunc
 	OnError     func(err error)
@@ -34,7 +34,9 @@ type SkyServer struct {
 	chanOffset uint64
 	chanMap    map[uint64]skyChannel
 	mux        sync.RWMutex
-	initCtl    sync.Once
+
+	initCtl sync.Once
+	net     skyapi.Multiplexer
 }
 
 func (s *SkyServer) init() {
@@ -54,19 +56,20 @@ func (s *SkyServer) init() {
 		// everything above 100K can be for miscellaneous purposes.
 		s.chanOffset = 100000
 		s.chanMap = make(map[uint64]skyChannel)
+		s.net = skyapi.SkyNet.WithEnv(s.AppTags...)
 	})
 }
 
-// func RegistryAndServe(addr string, source SourceFunc, appName string, tags ...string) error {
-// 	server := &SkyServer{
-// 		RegistryAddr: addr,
+func JoinAndServe(addr string, source SourceFunc, appName string, tags ...string) error {
+	server := &SkyServer{
+		RegistryAddr: addr,
 
-// 		Source:  source,
-// 		AppName: appName,
-// 		AppTags: tags,
-// 	}
-// 	return server.RegistryAndServe()
-// }
+		Source:  source,
+		AppName: appName,
+		AppTags: tags,
+	}
+	return server.JoinAndServe()
+}
 
 func ListenAndServe(addr string, source SourceFunc) error {
 	server := &SkyServer{
@@ -83,17 +86,13 @@ func (s *SkyServer) ListenAndServe() error {
 		s.serve(s.Listener)
 		return nil
 	}
-	if err := skyapi.SkyNet.ListenAndServe("tcp4", s.Addr); err != nil {
+	if err := s.net.ListenAndServe("tcp4", s.Addr); err != nil {
 		return err
 	}
-	if err := skyapi.SkyNet.Join("tcp4", s.Addr); err != nil {
+	if err := s.net.Join("tcp4", s.Addr); err != nil {
 		return err
 	}
-	skyAddr := "chanserv:1000"
-	if len(s.SkyAddr) > 0 {
-		skyAddr = s.SkyAddr
-	}
-	l, err := skyapi.SkyNet.Bind("", skyAddr)
+	l, err := s.net.Bind("", "chanserv:1000")
 	if err != nil {
 		return err
 	}
@@ -103,35 +102,30 @@ func (s *SkyServer) ListenAndServe() error {
 	return nil
 }
 
-// func (s *SkyServer) RegistryAndServe() error {
-// 	s.init()
+func (s *SkyServer) JoinAndServe() error {
+	s.init()
 
-// 	if len(s.AppName) == 0 {
-// 		return errors.New("no app name provided")
-// 	} else if len(s.RegistryAddr) == 0 {
-// 		return errors.New("no registry address provided")
-// 	}
-// 	regNet, err := registry.RegistryNetwork(skyapi.SkyNetwork, s.RegistryAddr, s.AppTags...)
-// 	if err != nil {
-// 		return err
-// 	}
+	if len(s.AppName) == 0 {
+		return errors.New("no app name provided")
+	} else if len(s.RegistryAddr) == 0 {
+		return errors.New("no registry address provided")
+	}
 
-// 	var listener skyapi.Listener
-// 	if s.Listener != nil {
-// 		listener, err = regNet.Bind(s.Listener, 0)
-// 	} else {
-// 		registryEntry := fmt.Sprintf("tcp4://registry/%s", s.AppName)
-// 		listener, err = regNet.BindNet(registryEntry, s.Addr, 0)
-// 		if err == nil {
-// 			defer listener.Close()
-// 		}
-// 	}
-// 	if err != nil {
-// 		return err
-// 	}
+	if err := s.net.ListenAndServe("tcp4", ":0"); err != nil {
+		return err
+	}
+	if err := s.net.Join("tcp4", s.RegistryAddr); err != nil {
+		return err
+	}
+	l, err := s.net.Bind("", s.AppName)
+	if err != nil {
+		return err
+	}
+	defer l.Close()
 
-// 	return s.serve(listener)
-// }
+	s.serve(l)
+	return nil
+}
 
 func (s *SkyServer) serve(listener net.Listener) {
 	var errMass int
@@ -213,7 +207,7 @@ func (s *SkyServer) bindChannel(host string, out <-chan Frame) (uint64, error) {
 	s.chanOffset++
 	offset := s.chanOffset
 	vAddr := fmt.Sprintf("%s:%d", host, offset)
-	listener, err := skyapi.SkyNet.Bind("", vAddr)
+	listener, err := s.net.Bind("", vAddr)
 	if err != nil {
 		s.chanOffset--
 		s.reportErr(err)
