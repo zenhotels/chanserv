@@ -9,7 +9,9 @@ import (
 
 var ErrWrongSize = errors.New("wrong frame size")
 
-const gb = 1024 * 1024 * 1024
+// FrameSizeLimit specifies the maximum size of payload in frame,
+// this limit may be increased or lifted in future.
+const FrameSizeLimit = 100 * 1024 * 1024
 
 func writeFrame(wr io.Writer, frame []byte) (err error) {
 	buf := make([]byte, 8)
@@ -27,7 +29,8 @@ func readFrame(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	frameSize := binary.LittleEndian.Uint64(buf)
-	if frameSize > 50*gb {
+	// check frame size for bounds
+	if frameSize > FrameSizeLimit {
 		return nil, ErrWrongSize
 	}
 	framebuf := bytes.NewBuffer(make([]byte, 0, frameSize))
