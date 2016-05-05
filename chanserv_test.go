@@ -58,8 +58,8 @@ func TestChanservRegistry(t *testing.T) {
 	}()
 
 	cli := SkyClient{
-		AppName:      testName,
-		AppTags:      []string{testEnv},
+		ServiceName:  testName,
+		ServiceTags:  []string{testEnv},
 		RegistryAddr: registryAddr,
 		DialTimeout:  2 * time.Second,
 		OnError: func(err error) {

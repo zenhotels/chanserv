@@ -17,8 +17,8 @@ type SkyServer struct {
 	OnError     func(err error)
 	OnChanError func(err error)
 
-	AppName      string
-	AppTags      []string
+	ServiceName  string
+	ServiceTags  []string
 	RegistryAddr string
 
 	CriticalErrMass   int
@@ -56,17 +56,17 @@ func (s *SkyServer) init() {
 		// everything above 100K can be for miscellaneous purposes.
 		s.chanOffset = 100000
 		s.chanMap = make(map[uint64]skyChannel)
-		s.net = skyapi.SkyNet.WithEnv(s.AppTags...)
+		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
 	})
 }
 
-func JoinAndServe(addr string, source SourceFunc, appName string, tags ...string) error {
+func JoinAndServe(addr string, source SourceFunc, svcName string, tags ...string) error {
 	server := &SkyServer{
 		RegistryAddr: addr,
 
-		Source:  source,
-		AppName: appName,
-		AppTags: tags,
+		Source:      source,
+		ServiceName: svcName,
+		ServiceTags: tags,
 	}
 	return server.JoinAndServe()
 }
@@ -105,8 +105,8 @@ func (s *SkyServer) ListenAndServe() error {
 func (s *SkyServer) JoinAndServe() error {
 	s.init()
 
-	if len(s.AppName) == 0 {
-		return errors.New("no app name provided")
+	if len(s.ServiceName) == 0 {
+		return errors.New("no service name provided")
 	} else if len(s.RegistryAddr) == 0 {
 		return errors.New("no registry address provided")
 	}
@@ -117,7 +117,7 @@ func (s *SkyServer) JoinAndServe() error {
 	if err := s.net.Join("tcp4", s.RegistryAddr); err != nil {
 		return err
 	}
-	l, err := s.net.Bind("", s.AppName)
+	l, err := s.net.Bind("", s.ServiceName)
 	if err != nil {
 		return err
 	}

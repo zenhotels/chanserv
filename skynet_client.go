@@ -20,8 +20,8 @@ type SkyClient struct {
 	FrameBuffer    int
 	OnError        func(err error)
 
-	AppName      string
-	AppTags      []string
+	ServiceName  string
+	ServiceTags  []string
 	RegistryAddr string
 
 	initOnce sync.Once
@@ -42,7 +42,7 @@ func (s *SkyClient) init() {
 		if s.FrameBuffer == 0 {
 			s.FrameBuffer = 1024
 		}
-		s.net = skyapi.SkyNet.WithEnv(s.AppTags...)
+		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
 	})
 }
 
@@ -81,8 +81,8 @@ func (s *SkyClient) LookupAndPost(body []byte, opt ...Options) (<-chan Source, e
 		close(sourceChan)
 		return sourceChan, err
 	}
-	if len(s.AppName) == 0 {
-		return retErr(errors.New("no app name provided"))
+	if len(s.ServiceName) == 0 {
+		return retErr(errors.New("no service name provided"))
 	} else if len(s.RegistryAddr) == 0 {
 		return retErr(errors.New("no registry addr provided"))
 	}
@@ -96,7 +96,7 @@ func (s *SkyClient) LookupAndPost(body []byte, opt ...Options) (<-chan Source, e
 	}
 
 	network := o.RegistryBucket()
-	conn, err := s.net.DialTimeout(network, s.AppName, s.DialTimeout)
+	conn, err := s.net.DialTimeout(network, s.ServiceName, s.DialTimeout)
 	if err != nil {
 		return retErr(err)
 	}
