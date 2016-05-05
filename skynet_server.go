@@ -206,7 +206,7 @@ func (s *SkyServer) bindChannel(host string, out <-chan Frame) (uint64, error) {
 
 	s.chanOffset++
 	offset := s.chanOffset
-	vAddr := fmt.Sprintf("%s:%d", host, offset)
+	vAddr := fmt.Sprintf(":%d", offset)
 	listener, err := s.net.Bind("", vAddr)
 	if err != nil {
 		s.chanOffset--
