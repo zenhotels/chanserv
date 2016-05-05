@@ -3,9 +3,13 @@ package chanserv
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"io"
 )
+
+var ErrWrongSize = errors.New("wrong frame size")
+
+const gb = 1024 * 1024 * 1024
 
 func writeFrame(wr io.Writer, frame []byte) (err error) {
 	buf := make([]byte, 8)
@@ -22,12 +26,11 @@ func readFrame(r io.Reader) ([]byte, error) {
 	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, err
 	}
-	v := binary.LittleEndian.Uint64(buf)
-	framebuf := bytes.NewBuffer(make([]byte, 0, v))
-	_, err := io.CopyN(framebuf, r, int64(v))
+	frameSize := binary.LittleEndian.Uint64(buf)
+	if frameSize > 50*gb {
+		return nil, ErrWrongSize
+	}
+	framebuf := bytes.NewBuffer(make([]byte, 0, frameSize))
+	_, err := io.CopyN(framebuf, r, int64(frameSize))
 	return framebuf.Bytes(), err
-}
-
-func chanAddr(offset uint64) string {
-	return fmt.Sprintf(":%d", offset)
 }
