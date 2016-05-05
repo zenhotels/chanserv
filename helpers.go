@@ -19,7 +19,7 @@ func writeFrame(wr io.Writer, frame []byte) (err error) {
 
 func readFrame(r io.Reader) ([]byte, error) {
 	buf := make([]byte, 8)
-	if _, err := r.Read(buf); err != nil {
+	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, err
 	}
 	v := binary.LittleEndian.Uint64(buf)
