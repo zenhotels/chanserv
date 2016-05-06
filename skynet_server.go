@@ -56,7 +56,7 @@ func (s *SkyServer) init() {
 		// everything above 100K can be for miscellaneous purposes.
 		s.chanOffset = 100000
 		s.chanMap = make(map[uint64]skyChannel)
-		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
+		s.net = skyapi.SkyNet.Server().WithEnv(s.ServiceTags...)
 	})
 }
 
