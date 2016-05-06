@@ -42,7 +42,7 @@ func (s *SkyClient) init() {
 		if s.FrameBuffer == 0 {
 			s.FrameBuffer = 1024
 		}
-		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
+		s.net = skyapi.SkyNet.Client().WithEnv(s.ServiceTags...)
 	})
 }
 
