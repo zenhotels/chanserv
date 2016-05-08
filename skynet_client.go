@@ -42,7 +42,7 @@ func (s *SkyClient) init() {
 		if s.FrameBuffer == 0 {
 			s.FrameBuffer = 1024
 		}
-		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
+		s.net = skyapi.SkyNet.Client().WithEnv(s.ServiceTags...)
 	})
 }
 
@@ -128,12 +128,12 @@ func (s *SkyClient) DialAndPost(addr string, body []byte, opt ...Options) (<-cha
 		return sourceChan, err
 	}
 
-	net := skyapi.SkyNet.New()
+	net := skyapi.SkyNet.Client().New()
 	if err := net.Join("tcp4", addr); err != nil {
 		return retErr(err)
 	}
 	network := o.RegistryBucket()
-	conn, err := net.DialTimeout(network, "chanserv:1000", s.DialTimeout)
+	conn, err := net.DialTimeout(network, "chanserv", s.DialTimeout)
 	if err != nil {
 		return retErr(err)
 	}

@@ -47,7 +47,7 @@ func (s *SkyServer) init() {
 				time.Sleep(30 * time.Second)
 			}
 		}
-		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
+		s.net = skyapi.SkyNet.Server().WithEnv(s.ServiceTags...)
 	})
 }
 
