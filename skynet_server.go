@@ -2,7 +2,6 @@ package chanserv
 
 import (
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -31,10 +30,6 @@ type SkyServer struct {
 	ServeTimeout        time.Duration
 	FramesAcceptTimeout time.Duration
 
-	chanOffset uint64
-	chanMap    map[uint64]skyChannel
-	mux        sync.RWMutex
-
 	initCtl sync.Once
 	net     skyapi.Multiplexer
 }
@@ -52,10 +47,6 @@ func (s *SkyServer) init() {
 				time.Sleep(30 * time.Second)
 			}
 		}
-		// ports <= 65536 are used for service discovery, thus
-		// everything above 100K can be for miscellaneous purposes.
-		s.chanOffset = 100000
-		s.chanMap = make(map[uint64]skyChannel)
 		s.net = skyapi.SkyNet.WithEnv(s.ServiceTags...)
 	})
 }
@@ -178,21 +169,15 @@ func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 			if s.SourceRTimeout > 0 {
 				t.Reset(s.SourceRTimeout)
 			}
-			host, _, err := net.SplitHostPort(masterConn.LocalAddr().String())
-			if err != nil {
-				// -> skynet is broken
-				panic(err)
-			}
-			port, err := s.bindChannel(host, out.Out())
+			vAddr, err := s.bindChannel(out.Out())
 			if s.reportErr(err) {
 				continue
 			}
 			if s.MasterWTimeout > 0 {
 				masterConn.SetWriteDeadline(time.Now().Add(s.MasterWTimeout))
 			}
-			addr := []byte(fmt.Sprintf("%s:%d", host, port))
 			if !s.reportErr(writeFrame(masterConn, out.Header())) {
-				if s.reportErr(writeFrame(masterConn, addr)) {
+				if s.reportErr(writeFrame(masterConn, []byte(vAddr))) {
 					continue
 				}
 			}
@@ -200,45 +185,28 @@ func (s *SkyServer) serveMaster(masterConn net.Conn, masterFn SourceFunc) {
 	}
 }
 
-func (s *SkyServer) bindChannel(host string, out <-chan Frame) (uint64, error) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
-
-	s.chanOffset++
-	offset := s.chanOffset
-	vAddr := fmt.Sprintf(":%d", offset)
-	listener, err := s.net.Bind("", vAddr)
+func (s *SkyServer) bindChannel(out <-chan Frame) (string, error) {
+	listener, err := s.net.Bind("", ":0")
 	if err != nil {
-		s.chanOffset--
 		s.reportErr(err)
-		return 0, err
+		return "", err
 	}
-
 	c := skyChannel{
 		Listener: listener,
 		outChan:  out,
 		onError:  s.OnError,
-		onClosed: func() {
-			s.unbindChannel(offset)
-		},
+		// onClosed: func() {
+		// 	s.unbindChannel(vAddr)
+		// },
 		wTimeout: s.FrameWTimeout,
 		aTimeout: s.FramesAcceptTimeout,
 	}
 	if s.OnChanError != nil {
 		c.onError = s.OnChanError
 	}
+	vAddr := listener.Addr().String()
 	go c.serve(s.ServeTimeout)
-	s.chanMap[offset] = c
-	return offset, nil
-}
-
-func (s *SkyServer) unbindChannel(offset uint64) {
-	s.mux.Lock()
-	if c, ok := s.chanMap[offset]; ok {
-		c.outChan = nil
-	}
-	delete(s.chanMap, offset)
-	s.mux.Unlock()
+	return vAddr, nil
 }
 
 func (s *SkyServer) reportErr(err error) bool {
@@ -272,7 +240,6 @@ func (c skyChannel) serve(timeout time.Duration) {
 		conn.SetDeadline(time.Now().Add(timeout))
 	}
 	defer conn.Close()
-	defer c.onClosed()
 	for frame := range c.outChan {
 		if c.wTimeout > 0 {
 			conn.SetWriteDeadline(time.Now().Add(c.wTimeout))
