@@ -6,8 +6,13 @@ type Frame interface {
 	Bytes() []byte
 }
 
+type MetaData interface {
+	RemoteAddr() string
+}
+
 type Source interface {
 	Header() []byte
+	Meta() MetaData
 	Out() <-chan Frame
 }
 

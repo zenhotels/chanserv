@@ -47,16 +47,44 @@ func (s *SkyClient) init() {
 }
 
 type source struct {
-	header []byte
-	out    chan Frame
+	header   []byte
+	metaData metaData
+	out      chan Frame
 }
 
 func (s source) Header() []byte {
 	return s.header
 }
 
+func (s source) Meta() MetaData {
+	return s.metaData
+}
+
 func (s source) Out() <-chan Frame {
 	return s.out
+}
+
+type metaData struct {
+	localAddr     string
+	localNetwork  string
+	remoteAddr    string
+	remoteNetwork string
+}
+
+func (m metaData) RemoteAddr() string {
+	return m.remoteAddr
+}
+
+func (m metaData) RemoteNetwork() string {
+	return m.remoteNetwork
+}
+
+func (m metaData) LocalAddr() string {
+	return m.localAddr
+}
+
+func (m metaData) LocalNetwork() string {
+	return m.localNetwork
 }
 
 type frame []byte
@@ -171,7 +199,16 @@ func (s *SkyClient) post(net skyapi.Multiplexer,
 	go func() {
 		expectHeader := true
 		out := make(chan Frame, s.FrameBuffer)
-		src := source{out: out}
+		meta := metaData{
+			remoteAddr:    conn.RemoteAddr().String(),
+			remoteNetwork: conn.RemoteAddr().Network(),
+			localAddr:     conn.LocalAddr().String(),
+			localNetwork:  conn.LocalAddr().Network(),
+		}
+		src := source{
+			out:      out,
+			metaData: meta,
+		}
 		for err == nil {
 			if expectHeader {
 				expectHeader = false
@@ -187,7 +224,10 @@ func (s *SkyClient) post(net skyapi.Multiplexer,
 
 			expectHeader = true
 			out = make(chan Frame, s.FrameBuffer)
-			src = source{out: out}
+			src = source{
+				out:      out,
+				metaData: meta,
+			}
 			if s.MasterRTimeout > 0 {
 				conn.SetReadDeadline(time.Now().Add(s.MasterRTimeout))
 			}
