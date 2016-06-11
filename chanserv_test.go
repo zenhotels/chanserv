@@ -49,7 +49,7 @@ func init() {
 	}
 }
 
-func TestChanservRegistry(t *testing.T) {
+func TestRegistryChanserv(t *testing.T) {
 	go func() {
 		log.Println("Registering", testName, "on", registryAddr, "under env", testEnv)
 		if err := JoinAndServe(registryAddr, SourceFn, testName, testEnv); err != nil {
@@ -145,4 +145,8 @@ func (p *testSource) Header() []byte {
 
 func (s *testSource) Out() <-chan Frame {
 	return s.frames
+}
+
+func (t *testSource) Meta() MetaData {
+	return nil
 }
