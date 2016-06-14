@@ -24,5 +24,6 @@ type Server interface {
 }
 
 type Client interface {
-	Post(addr string, body []byte) (<-chan Source, error)
+	LookupAndPost(body []byte, opt ...Options) (<-chan Source, error)
+	DialAndPost(addr string, body []byte, opt ...Options) (<-chan Source, error)
 }

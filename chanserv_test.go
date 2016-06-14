@@ -61,7 +61,7 @@ func TestRegistryChanserv(t *testing.T) {
 		ServiceName:  testName,
 		ServiceTags:  []string{testEnv},
 		RegistryAddr: registryAddr,
-		DialTimeout:  2 * time.Second,
+		DialTimeout:  10 * time.Second,
 		OnError: func(err error) {
 			t.Fatal("[ERR]", err)
 		},

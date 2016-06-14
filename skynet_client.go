@@ -24,9 +24,9 @@ type SkyClient struct {
 	ServiceTags  []string
 	RegistryAddr string
 
-	initOnce sync.Once
-	joinOnce sync.Once
-	net      skyapi.Multiplexer
+	initOnce  sync.Once
+	net       skyapi.Multiplexer
+	netDirect skyapi.Multiplexer
 }
 
 var defaultClient = &SkyClient{}
@@ -43,6 +43,10 @@ func (s *SkyClient) init() {
 			s.FrameBuffer = 1024
 		}
 		s.net = skyapi.SkyNet.Client().WithEnv(s.ServiceTags...)
+		s.netDirect = skyapi.SkyNet.Client().New()
+		if len(s.RegistryAddr) > 0 {
+			s.reportErr(s.net.Join("tcp4", s.RegistryAddr))
+		}
 	})
 }
 
@@ -114,12 +118,7 @@ func (s *SkyClient) LookupAndPost(body []byte, opt ...Options) (<-chan Source, e
 	} else if len(s.RegistryAddr) == 0 {
 		return retErr(errors.New("no registry addr provided"))
 	}
-
-	var err error
-	s.joinOnce.Do(func() {
-		err = s.net.Join("tcp4", s.RegistryAddr)
-	})
-	if err != nil {
+	if err := s.net.Join("tcp4", s.RegistryAddr); err != nil {
 		return retErr(err)
 	}
 
@@ -156,12 +155,21 @@ func (s *SkyClient) DialAndPost(addr string, body []byte, opt ...Options) (<-cha
 		return sourceChan, err
 	}
 
-	net := skyapi.SkyNet.Client().New()
+	var net skyapi.Multiplexer
+	if len(s.ServiceTags) > 0 {
+		net = s.net
+	} else {
+		net = s.netDirect
+	}
 	if err := net.Join("tcp4", addr); err != nil {
 		return retErr(err)
 	}
 	network := o.RegistryBucket()
-	conn, err := net.DialTimeout(network, "chanserv", s.DialTimeout)
+	serviceName := "chanserv"
+	if len(s.ServiceName) > 0 {
+		serviceName = s.ServiceName
+	}
+	conn, err := net.DialTimeout(network, serviceName, s.DialTimeout)
 	if err != nil {
 		return retErr(err)
 	}
@@ -276,4 +284,9 @@ func (s *SkyClient) discover(net skyapi.Multiplexer, addr string, out chan<- Fra
 	if err != io.EOF {
 		s.reportErr(err)
 	}
+}
+
+func (s *SkyClient) Multiplexer() skyapi.Multiplexer {
+	s.init()
+	return s.net
 }
