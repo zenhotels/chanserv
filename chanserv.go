@@ -22,8 +22,3 @@ type Server interface {
 	ListenAndServe(addr string, source SourceFunc) error
 	Serve(l net.Listener, source SourceFunc) error
 }
-
-type Client interface {
-	LookupAndPost(body []byte, opt ...Options) (<-chan Source, error)
-	DialAndPost(addr string, body []byte, opt ...Options) (<-chan Source, error)
-}

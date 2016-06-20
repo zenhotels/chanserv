@@ -177,6 +177,34 @@ func (s *SkyClient) DialAndPost(addr string, body []byte, opt ...Options) (<-cha
 	return s.post(net, conn, body)
 }
 
+func (s *SkyClient) DirectPost(vAddr string, body []byte, opt ...Options) (<-chan Source, error) {
+	s.init()
+
+	var o Options
+	if len(opt) > 0 {
+		o = opt[0]
+	}
+	retErr := func(err error) (<-chan Source, error) {
+		sourceChan := make(chan Source)
+		close(sourceChan)
+		return sourceChan, err
+	}
+
+	var net skyapi.Multiplexer
+	if len(s.ServiceTags) > 0 {
+		net = s.net
+	} else {
+		net = s.netDirect
+	}
+	network := o.RegistryBucket()
+	conn, err := net.DialTimeout(network, vAddr, s.DialTimeout)
+	if err != nil {
+		return retErr(err)
+	}
+
+	return s.post(net, conn, body)
+}
+
 func (s *SkyClient) post(net skyapi.Multiplexer,
 	conn net.Conn, body []byte) (<-chan Source, error) {
 
