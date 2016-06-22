@@ -89,7 +89,7 @@ func (f frame) Bytes() []byte {
 }
 
 func (c client) LookupAndPost(vAddr string,
-	body []byte, tags map[PostTag]string) (<-chan Source, error) {
+	body []byte, tags map[RequestTag]string) (<-chan Source, error) {
 
 	retErr := func(err error) (<-chan Source, error) {
 		srcChan := make(chan Source)
@@ -99,8 +99,8 @@ func (c client) LookupAndPost(vAddr string,
 	if c.mpx == nil {
 		return retErr(errors.New("chanserv: mpx not set"))
 	}
-	var svcBucket string
-	if bucket, ok := tags[BucketTag]; ok && len(bucket) > 0 {
+	var svcBucket string // TODO: handle other tags
+	if bucket, ok := tags[TagBucket]; ok && len(bucket) > 0 {
 		svcBucket = fmt.Sprintf("registry://%s", bucket)
 	}
 	conn, err := c.mpx.DialTimeout(svcBucket, vAddr, c.timeouts.dialTimeout)
