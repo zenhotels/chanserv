@@ -33,6 +33,7 @@ func TestChanserv(t *testing.T) {
 	if err := mpx.ListenAndServe("tcp4", ":5555"); err != nil {
 		log.Fatalln("[astranet ERR]", err)
 	}
+
 	// join Multiplexer to the local astranet
 	if err := mpx.Join("tcp4", "localhost:5555"); err != nil {
 		log.Fatalln("[astranet ERR]", err)
