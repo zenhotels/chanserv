@@ -31,13 +31,13 @@ type Server interface {
 	ListenAndServe(vAddr string, src SourceFunc) error
 }
 
-type PostTag int
+type RequestTag int
 
 const (
-	MetaTag PostTag = iota
-	BucketTag
+	TagMeta RequestTag = iota
+	TagBucket
 )
 
 type Client interface {
-	LookupAndPost(vAddr string, body []byte, tags map[PostTag]string) (<-chan Source, error)
+	LookupAndPost(vAddr string, body []byte, tags map[RequestTag]string) (<-chan Source, error)
 }
