@@ -9,37 +9,70 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/zenhotels/astranet"
 )
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func TestChanserv(t *testing.T) {
-	go func() {
-		if err := ListenAndServe(":5555", SourceFn); err != nil {
-			log.Fatalln(err)
-		}
-	}()
+func srcFn(req []byte) <-chan Source {
+	out := make(chan Source, 10)
+	for i := 0; i < 10; i++ {
+		src := testSource{n: i + 1, data: req}
+		out <- src.Run(time.Millisecond*time.Duration(100*i) + 100)
+	}
+	close(out)
+	return out
+}
 
-	cli := SkyClient{
-		DialTimeout: 2 * time.Second,
-		OnError: func(err error) {
-			t.Fatal("[ERR]", err)
-		},
+func TestChanserv(t *testing.T) {
+	// init the astranet server's Multiplexer
+	mpx := astranet.New().Server()
+	if err := mpx.ListenAndServe("tcp4", ":5555"); err != nil {
+		log.Fatalln("[astranet ERR]", err)
 	}
-	sources, err := cli.DialAndPost("localhost:5555", []byte("hello"), Options{
-		Bucket: "deadbeef",
-	})
+	// join Multiplexer to the local astranet
+	if err := mpx.Join("tcp4", "localhost:5555"); err != nil {
+		log.Fatalln("[astranet ERR]", err)
+	}
+
+	// start the Server
+	srv := NewServer(mpx, ServerOnError(func(err error) {
+		log.Println("[server WARN]", err)
+	}))
+	if err := srv.ListenAndServe("chanserv", srcFn); err != nil {
+		log.Fatalln("[server ERR]", err)
+	}
+
+	// init the astranet client's Multiplexer
+	mpx2 := astranet.New().Client()
+	// join Multiplexer to the local astranet server
+	if err := mpx2.Join("tcp4", "localhost:5555"); err != nil {
+		log.Fatalln("[astranet ERR]", err)
+	}
+
+	// init the Client
+	cli := NewClient(mpx2,
+		ClientDialTimeout(5*time.Second),
+		ClientOnError(func(err error) {
+			log.Println("[client WARN]", err)
+		}),
+	)
+
+	// lookup the chanserv service and post the request
+	sources, err := cli.LookupAndPost("chanserv", []byte("hello"), nil)
 	if err != nil {
-		t.Fatal(err)
+		log.Fatalln("[client ERR]", err)
 	}
+
 	checkSources(t, sources)
 }
 
 var (
-	registryAddr = "route.hotcore.in:10000"
-	testName     = "chanserv_test"
+	registryAddr = "route.igw.io:10000"
+	testService  = "chanserv"
 	testEnv      = "local"
 )
 
@@ -50,28 +83,50 @@ func init() {
 }
 
 func TestRegistryChanserv(t *testing.T) {
-	go func() {
-		log.Println("Registering", testName, "on", registryAddr, "under env", testEnv)
-		if err := JoinAndServe(registryAddr, SourceFn, testName, testEnv); err != nil {
-			log.Fatalln(err)
-		}
-	}()
-
-	cli := SkyClient{
-		ServiceName:  testName,
-		ServiceTags:  []string{testEnv},
-		RegistryAddr: registryAddr,
-		DialTimeout:  10 * time.Second,
-		OnError: func(err error) {
-			t.Fatal("[ERR]", err)
-		},
+	// init the astranet server's Multiplexer
+	mpx := astranet.New().Server().WithEnv(testEnv)
+	if err := mpx.ListenAndServe("tcp4", "0.0.0.0:0"); err != nil {
+		log.Fatalln("[astranet ERR]", err)
 	}
-	sources, err := cli.LookupAndPost([]byte("hello"), Options{
-		Bucket: "deadbeef",
-	})
+
+	// start the Server
+	srv := NewServer(mpx, ServerOnError(func(err error) {
+		log.Println("[server WARN]", err)
+	}))
+	if err := srv.ListenAndServe(testService, srcFn); err != nil {
+		log.Fatalln("[server ERR]", err)
+	}
+
+	// register this chanserv service
+	if err := mpx.Join("tcp4", registryAddr); err != nil {
+		log.Fatalln("[astranet ERR]", err)
+	} else {
+		log.Println("[astranet INFO] registered", testService, "on", registryAddr, "with env", testEnv)
+	}
+
+	// init the astranet client's Multiplexer
+	mpx2 := astranet.New().Client().WithEnv(testEnv)
+
+	// join the discovery service
+	if err := mpx2.Join("tcp4", registryAddr); err != nil {
+		log.Fatalln("[astranet ERR]", err)
+	}
+
+	// init the Client
+	cli := NewClient(mpx2,
+		// dial timeout includes service discovery time
+		ClientDialTimeout(30*time.Second),
+		ClientOnError(func(err error) {
+			log.Println("[client WARN]", err)
+		}),
+	)
+
+	// lookup the chanserv service upon registry and post the request
+	sources, err := cli.LookupAndPost(testService, []byte("hello"), nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
+
 	checkSources(t, sources)
 }
 
@@ -107,16 +162,6 @@ func checkSources(t *testing.T, sources <-chan Source) {
 		t.Fatal("test timeout (waitgroup deadlock?)")
 	case <-done:
 	}
-}
-
-func SourceFn(req []byte) <-chan Source {
-	out := make(chan Source, 10)
-	for i := 0; i < 10; i++ {
-		src := testSource{n: i + 1, data: req}
-		out <- src.Run(time.Millisecond*time.Duration(100*i) + 100)
-	}
-	close(out)
-	return out
 }
 
 type testSource struct {

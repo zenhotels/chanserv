@@ -1,6 +1,9 @@
 package chanserv
 
-import "net"
+import (
+	"net"
+	"time"
+)
 
 type Frame interface {
 	Bytes() []byte
@@ -18,7 +21,22 @@ type Source interface {
 
 type SourceFunc func(reqBody []byte) <-chan Source
 
+type Multiplexer interface {
+	Bind(net, laddr string) (net.Listener, error)
+	DialTimeout(network string, address string, timeout time.Duration) (net.Conn, error)
+}
+
 type Server interface {
-	ListenAndServe(addr string, source SourceFunc) error
-	Serve(l net.Listener, source SourceFunc) error
+	ListenAndServe(vAddr string, src SourceFunc) error
+}
+
+type PostTag int
+
+const (
+	MetaTag PostTag = iota
+	BucketTag
+)
+
+type Client interface {
+	LookupAndPost(vAddr string, body []byte, tags map[PostTag]string) (<-chan Source, error)
 }

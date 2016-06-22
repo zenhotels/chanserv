@@ -1,4 +1,4 @@
-## chanserv
+## Chanserv
 
 ```
 $ go test
@@ -22,3 +22,7 @@ $ go test
 2016/03/17 21:11:44 chanserv_test.go:48: [FRAME 1 from @5] ok I'm ready
 PASS
 ```
+
+## License
+
+MIT

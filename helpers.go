@@ -5,6 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"net"
+	"sync"
+	"time"
 )
 
 var ErrWrongSize = errors.New("wrong frame size")
@@ -36,4 +39,35 @@ func readFrame(r io.Reader) ([]byte, error) {
 	framebuf := bytes.NewBuffer(make([]byte, 0, frameSize))
 	_, err := io.CopyN(framebuf, r, int64(frameSize))
 	return framebuf.Bytes(), err
+}
+
+var timerPool sync.Pool
+
+func init() {
+	timerPool.New = func() interface{} {
+		t := time.NewTimer(time.Minute)
+		t.Stop()
+		return t
+	}
+}
+
+func acceptTimeout(l net.Listener, d time.Duration) (conn net.Conn, err error) {
+	timeout := timerPool.Get().(*time.Timer)
+	timeout.Reset(d)
+	defer func() {
+		timeout.Stop()
+		timerPool.Put(timeout)
+	}()
+	done := make(chan struct{})
+	go func() {
+		conn, err = l.Accept()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-timeout.C:
+		err = io.ErrNoProgress
+		l.Close()
+	}
+	return
 }
