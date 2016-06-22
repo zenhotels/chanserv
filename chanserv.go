@@ -1,3 +1,4 @@
+// Package chanserv implements an effective 2-dimensional message queue based upon AstraNet multiplexer and discovery capabilities.
 package chanserv
 
 import (
