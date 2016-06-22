@@ -34,11 +34,6 @@ func TestChanserv(t *testing.T) {
 		log.Fatalln("[astranet ERR]", err)
 	}
 
-	// join Multiplexer to the local astranet
-	if err := mpx.Join("tcp4", "localhost:5555"); err != nil {
-		log.Fatalln("[astranet ERR]", err)
-	}
-
 	// start the Server
 	srv := NewServer(mpx, ServerOnError(func(err error) {
 		log.Println("[server WARN]", err)
@@ -49,6 +44,7 @@ func TestChanserv(t *testing.T) {
 
 	// init the astranet client's Multiplexer
 	mpx2 := astranet.New().Client()
+
 	// join Multiplexer to the local astranet server
 	if err := mpx2.Join("tcp4", "localhost:5555"); err != nil {
 		log.Fatalln("[astranet ERR]", err)
