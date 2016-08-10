@@ -4,7 +4,7 @@
 $ go get github.com/astranet/chanserv
 ```
 
-Package [chanserv](https://github.com/astranet/chanserv) is a simple message queue framework based upon nested Go-lang channels being served using the [AstraNet](https://github.com/zenhotels/astranet).
+Package chanserv provides a simple message queue framework based upon nested Go-lang channels being served using [AstraNet](https://github.com/zenhotels/astranet).
 
 ### Wait, what?..
 

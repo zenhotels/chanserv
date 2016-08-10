@@ -1,4 +1,4 @@
-// Package chanserv is a simple message queue framework based upon nested Go-lang channels being served using the AstraNet.
+// Package chanserv provides a simple message queue framework based upon nested Go-lang channels being served using AstraNet.
 package chanserv
 
 import (

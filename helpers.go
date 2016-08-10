@@ -12,7 +12,7 @@ import (
 
 var ErrWrongSize = errors.New("wrong frame size")
 
-// FrameSizeLimit specifies the maximum size of payload in frame,
+// FrameSizeLimit specifies the maximum size of payload in a frame,
 // this limit may be increased or lifted in future.
 const FrameSizeLimit = 100 * 1024 * 1024
 
