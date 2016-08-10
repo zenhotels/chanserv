@@ -2,6 +2,7 @@ package chanserv
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"time"
 )
@@ -25,16 +26,18 @@ type serverTimeouts struct {
 
 	masterReadTimeout  time.Duration
 	masterWriteTimeout time.Duration
-	frameReadTimeout   time.Duration
 	frameWriteTimeout  time.Duration
 }
 
+// NewServer initializes a new server using the provided multiplexer for
+// the network capabilities. Refer to the server options if you want to specify
+// timeouts and error callbacks.
 func NewServer(mpx Multiplexer, opts ...ServerOption) Server {
 	srv := server{
 		mpx: mpx,
 
-		onError:     func(err error) {},
-		onChanError: func(err error) {},
+		onError:     func(err error) {}, // no report
+		onChanError: func(err error) {}, // no report
 		onMaxErrMass: func(mass int, err error) {
 			// TODO: graceful fallback based on the mass value
 			time.Sleep(30 * time.Second)
@@ -42,6 +45,8 @@ func NewServer(mpx Multiplexer, opts ...ServerOption) Server {
 
 		maxErrMass: 10,
 		timeouts: serverTimeouts{
+			// chanAcceptTimeout triggers when a channel has been announced
+			// but nobody has discovered it in time.
 			chanAcceptTimeout: 30 * time.Second,
 		},
 	}
@@ -57,6 +62,7 @@ func (s server) ListenAndServe(vAddr string, srcFn SourceFunc) error {
 	}
 	l, err := s.mpx.Bind("", vAddr)
 	if err != nil {
+		err = fmt.Errorf("chanserv mpx.Bind: %v", err)
 		return err
 	}
 	// warn: serve will close listener
@@ -71,6 +77,7 @@ func (s server) serve(listener net.Listener, srcFn SourceFunc) {
 	for {
 		masterConn, err := listener.Accept()
 		if err != nil {
+			err = fmt.Errorf("master listener.Accept: %v", err)
 			s.onError(err)
 			errMass++
 			if s.maxErrMass > 0 && errMass >= s.maxErrMass {
@@ -94,6 +101,7 @@ func (s server) serveMaster(masterConn net.Conn, srcFn SourceFunc) {
 	}
 	reqBody, err := readFrame(masterConn)
 	if err != nil {
+		err = fmt.Errorf("master readFrame: %v", err)
 		s.onError(err)
 		return
 	}
@@ -121,6 +129,7 @@ func (s server) serveMaster(masterConn net.Conn, srcFn SourceFunc) {
 			}
 			chanAddr, err := s.bindChannel(out.Out())
 			if err != nil {
+				err = fmt.Errorf("master bindChannel: %v", err)
 				s.onError(err)
 				continue
 			}
@@ -129,9 +138,11 @@ func (s server) serveMaster(masterConn net.Conn, srcFn SourceFunc) {
 			}
 			if err := writeFrame(masterConn, out.Header()); err == nil {
 				if err = writeFrame(masterConn, []byte(chanAddr)); err != nil {
+					err = fmt.Errorf("master writeFrame: %v", err)
 					s.onError(err)
 				}
 			} else {
+				err = fmt.Errorf("master writeFrame: %v", err)
 				s.onError(err)
 			}
 		}
@@ -139,8 +150,9 @@ func (s server) serveMaster(masterConn net.Conn, srcFn SourceFunc) {
 }
 
 func (s server) bindChannel(out <-chan Frame) (string, error) {
-	l, err := s.mpx.Bind("", ":0")
+	l, err := s.mpx.Bind("", ":0") // random port
 	if err != nil {
+		err = fmt.Errorf("bindChannel mpx.Bind: %v", err)
 		s.onError(err)
 		return "", err
 	}
@@ -171,6 +183,7 @@ func (c channel) serve(timeout time.Duration) {
 
 	conn, err := acceptTimeout(c, c.aTimeout)
 	if err != nil {
+		err = fmt.Errorf("channel acceptTimeout: %v", err)
 		c.onError(err)
 		return
 	}
@@ -183,6 +196,7 @@ func (c channel) serve(timeout time.Duration) {
 			conn.SetWriteDeadline(time.Now().Add(c.wTimeout))
 		}
 		if err := writeFrame(conn, frame.Bytes()); err != nil {
+			err = fmt.Errorf("channel writeFrame: %v", err)
 			c.onError(err)
 		}
 	}

@@ -24,10 +24,13 @@ type clientTimeouts struct {
 	frameReadTimeout   time.Duration
 }
 
+// NewClient initializes a new client using the provided multiplexer for
+// the network capabilities. Refer to the client options if you want to specify
+// timeouts and error callbacks.
 func NewClient(mpx Multiplexer, opts ...ClientOption) Client {
 	cli := client{
 		mpx:     mpx,
-		onError: func(err error) {},
+		onError: func(err error) {}, // no report
 
 		srcBufSize:   128,
 		frameBufSize: 1024,
@@ -121,6 +124,7 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 		return srcChan, err
 	}
 	if err := writeFrame(conn, body); err != nil {
+		err = fmt.Errorf("post writeFrame: %v", err)
 		return retErr(err)
 	}
 
@@ -130,6 +134,7 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 	buf, err := readFrame(conn)
 	if err != nil {
 		if err != io.EOF {
+			err = fmt.Errorf("post readFrame: %v", err)
 			return retErr(err)
 		}
 		return retErr(nil)
@@ -177,6 +182,7 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 		conn.Close()
 		close(srcChan)
 		if err != io.EOF {
+			err = fmt.Errorf("post readFrame: %v", err)
 			c.onError(err)
 		}
 	}()
@@ -187,8 +193,10 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 func (c client) discover(vAddr string, out chan<- Frame) {
 	defer close(out)
 
+	// channel discover currently uses no additional options
 	conn, err := c.mpx.DialTimeout("", vAddr, c.timeouts.dialTimeout)
 	if err != nil {
+		err = fmt.Errorf("discover mpx.DialTimeout: %v", err)
 		c.onError(err)
 		return
 	}
@@ -207,6 +215,7 @@ func (c client) discover(vAddr string, out chan<- Frame) {
 		buf, err = readFrame(conn)
 	}
 	if err != io.EOF {
+		err = fmt.Errorf("discover readFrame: %v", err)
 		c.onError(err)
 	}
 }
