@@ -41,14 +41,14 @@ PASS
 
 Completed on MacBook's **2.8 GHz Intel Core i5** with 8 GB 1600 MHz DDR3.
 
-```
+```bash
 $ go test -run=none -bench=BenchmarkConnectChanserv -benchtime 10s
 BenchmarkConnectChanserv-4         10000       1025092 ns/op     1012843 B/op        367 allocs/op
 PASS
 
 $ go test -run=none -bench=.
-BenchmarkHeavyChanserv-4           1    14000851652 ns/op // 14 sec
-BenchmarkFloodChanserv-4           1    27001783856 ns/op // 27 sec
+BenchmarkHeavyChanserv-4           1    14000851652 ns/op # 14 sec
+BenchmarkFloodChanserv-4           1    27001783856 ns/op # 27 sec
 PASS
 ```
 
