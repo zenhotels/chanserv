@@ -33,35 +33,6 @@ const (
 	floodFrameSize   = 64 // 64 bytes
 )
 
-func BenchmarkConnectChanserv(b *testing.B) {
-	b.ReportAllocs()
-
-	for i := 0; i < b.N; i++ {
-		sources, err := chanservCli.LookupAndPost("chanserv-astranet-empty", []byte("hello"), nil)
-		if err != nil {
-			b.Fatal(err)
-			return
-		}
-
-		var frames int64
-		wg := new(sync.WaitGroup)
-		wg.Add(1)
-		for src := range sources {
-			go func(src Source) {
-				for range src.Out() {
-					atomic.AddInt64(&frames, 1)
-				}
-				wg.Done()
-			}(src)
-		}
-		wg.Wait()
-
-		if atomic.LoadInt64(&frames) != 1 {
-			b.Fatal("BenchmarkConnectChanserv: frames != 1")
-		}
-	}
-}
-
 func getMeters() (frameMeter metrics.Meter, frameDataMeter metrics.Meter, stop func()) {
 	stopC := make(chan struct{})
 	doneC := make(chan struct{})
@@ -83,15 +54,11 @@ func getMeters() (frameMeter metrics.Meter, frameDataMeter metrics.Meter, stop f
 			fmt.Printf("METRICS> Goroutines: %.1fK\n", float64(runtime.NumGoroutine())/1000)
 			fmt.Printf("METRICS> Frames: %.1fK\n", float64(snap.Count())/1000)
 			fmt.Printf("METRICS> Frames/s: %.1fK\n", float64(snap.Count()-prevFrames)/1000)
-			// log.Println("Frames/min:", snap.Rate1())
-			// log.Println("Frames mean:", snap.RateMean())
 			prevFrames = snap.Count()
 
 			snap = frameDataMeter.Snapshot()
-			fmt.Println("METRICS> GB:", float64(snap.Count())/GB)
-			fmt.Println("METRICS> Gbit/second:", float64(snap.Count()-prevFramesData)*8/GB)
-			// log.Println("MB/min:", snap.Rate1())
-			// log.Println("MB mean:", snap.RateMean())
+			fmt.Printf("METRICS> GB: %.3f\n", float64(snap.Count())/GB)
+			fmt.Printf("METRICS> Gbit/second: %.3f\n", float64(snap.Count()-prevFramesData)*8/GB)
 			prevFramesData = snap.Count()
 
 			fmt.Println()
@@ -105,6 +72,38 @@ func getMeters() (frameMeter metrics.Meter, frameDataMeter metrics.Meter, stop f
 		}
 	}()
 	return frameMeter, frameDataMeter, stop
+}
+
+func BenchmarkConnectChanserv(b *testing.B) {
+	b.ReportAllocs()
+	b.SetParallelism(runtime.NumCPU())
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			sources, err := chanservCli.LookupAndPost("chanserv-astranet-empty", []byte("hello"), nil)
+			if err != nil {
+				b.Fatal(err)
+				return
+			}
+
+			var frames int64
+			wg := new(sync.WaitGroup)
+			wg.Add(1)
+			for src := range sources {
+				go func(src Source) {
+					for range src.Out() {
+						atomic.AddInt64(&frames, 1)
+					}
+					wg.Done()
+				}(src)
+			}
+			wg.Wait()
+
+			if atomic.LoadInt64(&frames) != 1 {
+				b.Fatal("BenchmarkConnectChanserv: frames != 1")
+			}
+		}
+	})
 }
 
 func BenchmarkHeavyChanserv(b *testing.B) {
@@ -181,6 +180,7 @@ func getChanservAstranet() (Client, Server) {
 	srv := NewServer(mpx, ServerOnError(func(err error) {
 		log.Println("[server WARN]", err)
 	}))
+	emptySrcFunc := getBenchSrcFunc(1, 1, 0)
 	if err := srv.ListenAndServe("chanserv-astranet-empty", emptySrcFunc); err != nil {
 		log.Fatalln("[server ERR]", err)
 	}
@@ -205,30 +205,6 @@ func getChanservAstranet() (Client, Server) {
 		}),
 	)
 	return cli, srv
-}
-
-func emptySrcFunc(req []byte) <-chan Source {
-	out := make(chan Source, 1)
-	out <- emptySrc{}
-	close(out)
-	return out
-}
-
-type emptySrc struct{}
-
-func (e emptySrc) Header() []byte { return nil }
-func (e emptySrc) Meta() MetaData { return nil }
-func (e emptySrc) Out() <-chan Frame {
-	frames := make(chan Frame, 1)
-	frames <- emptyFrame{}
-	close(frames)
-	return frames
-}
-
-type emptyFrame struct{}
-
-func (e emptyFrame) Bytes() []byte {
-	return nil
 }
 
 func getBenchSrcFunc(srcLimit, frameLimit, frameSize int) func(req []byte) <-chan Source {

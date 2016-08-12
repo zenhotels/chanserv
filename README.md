@@ -10,6 +10,8 @@ Package chanserv provides a simple message queue framework based upon nested Go-
 
 Explanatory post is here: http://tech.zenhotels.com/chanserv-and-astranet
 
+![overview](https://cl.ly/2d3l371B211f/chanserv-overall.png)
+
 ### Demo output
 
 ```
@@ -34,6 +36,22 @@ $ go test
 2016/03/17 21:11:44 chanserv_test.go:48: [FRAME 1 from @5] ok I'm ready
 PASS
 ```
+
+## Benchmarks
+
+Completed on MacBook's **2.8 GHz Intel Core i5** with 8 GB 1600 MHz DDR3.
+
+```
+$ go test -run=none -bench=BenchmarkConnectChanserv -benchtime 10s
+BenchmarkConnectChanserv-4         10000       1025092 ns/op     1012843 B/op        367 allocs/op
+PASS
+
+$ go test -run=none -bench=.
+BenchmarkHeavyChanserv-4           1    14000851652 ns/op // 14 sec
+BenchmarkFloodChanserv-4           1    27001783856 ns/op // 27 sec
+PASS
+```
+
 
 ## License
 
