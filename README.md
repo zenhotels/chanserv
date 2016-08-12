@@ -1,7 +1,7 @@
 ## Chanserv [![GoDoc](https://godoc.org/github.com/zenhotels/chanserv?status.svg)](https://godoc.org/github.com/zenhotels/chanserv)
 
 ```
-$ go get github.com/astranet/chanserv
+$ go get github.com/zenhotels/chanserv
 ```
 
 Package chanserv provides a simple message queue framework based upon nested Go-lang channels being served using [AstraNet](https://github.com/zenhotels/astranet).
