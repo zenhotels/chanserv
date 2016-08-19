@@ -174,7 +174,7 @@ func BenchmarkFloodChanserv(b *testing.B) {
 
 func getChanservAstranet() (Client, Server) {
 	mpx := astranet.New().Server()
-	if err := mpx.ListenAndServe("tcp4", ":5555"); err != nil {
+	if err := mpx.ListenAndServe("tcp4", ":5556"); err != nil {
 		log.Fatalln("[astranet ERR]", err)
 	}
 	srv := NewServer(mpx, ServerOnError(func(err error) {
@@ -193,7 +193,7 @@ func getChanservAstranet() (Client, Server) {
 		log.Fatalln("[server ERR]", err)
 	}
 	mpx2 := astranet.New().Client()
-	if err := mpx2.Join("tcp4", "localhost:5555"); err != nil {
+	if err := mpx2.Join("tcp4", "localhost:5556"); err != nil {
 		log.Fatalln("[astranet ERR]", err)
 	}
 	cli := NewClient(mpx2,
