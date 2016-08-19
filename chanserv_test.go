@@ -68,7 +68,7 @@ func TestChanserv(t *testing.T) {
 }
 
 var (
-	registryAddr = "route.hotcore.in:10000"
+	registryAddr = "join.igw.io:10000"
 	testService  = "chanserv"
 	testEnv      = "local"
 )
