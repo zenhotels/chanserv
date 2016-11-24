@@ -37,6 +37,10 @@ func writeCompressedFrame(wr io.Writer, frame []byte) (err error) {
 	if err != nil {
 		return err
 	}
+	if size >= len(frame) {
+		// discard compressed results
+		return writeFrame(wr, frame)
+	}
 	comp = comp[:size]
 	frameSize := size + len(CompressionHeader) + 8
 	buf := make([]byte, 8+len(CompressionHeader)+8)
