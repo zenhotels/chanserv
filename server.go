@@ -16,7 +16,8 @@ type server struct {
 	onError      func(err error)
 	onChanError  func(err error)
 
-	timeouts serverTimeouts
+	timeouts       serverTimeouts
+	useCompression bool
 }
 
 type serverTimeouts struct {
@@ -43,7 +44,8 @@ func NewServer(mpx Multiplexer, opts ...ServerOption) Server {
 			time.Sleep(30 * time.Second)
 		},
 
-		maxErrMass: 10,
+		maxErrMass:     10,
+		useCompression: false,
 		timeouts: serverTimeouts{
 			// chanAcceptTimeout triggers when a channel has been announced
 			// but nobody has discovered it in time.
@@ -99,7 +101,7 @@ func (s server) serveMaster(masterConn net.Conn, srcFn SourceFunc) {
 	if d := s.timeouts.masterReadTimeout; d > 0 {
 		masterConn.SetReadDeadline(time.Now().Add(d))
 	}
-	reqBody, err := readFrame(masterConn)
+	reqBody, err := readFrame(masterConn, false)
 	if err != nil {
 		err = fmt.Errorf("master readFrame: %v", err)
 		s.onError(err)
@@ -162,6 +164,8 @@ func (s server) bindChannel(out <-chan Frame) (string, error) {
 		onError:  s.onChanError,
 		wTimeout: s.timeouts.frameWriteTimeout,
 		aTimeout: s.timeouts.chanAcceptTimeout,
+
+		useCompression: s.useCompression,
 	}
 	vAddr := l.Addr().String()
 	go c.serve(s.timeouts.servingTimeout)
@@ -175,7 +179,8 @@ type channel struct {
 	wTimeout time.Duration
 	aTimeout time.Duration
 
-	onError func(err error)
+	onError        func(err error)
+	useCompression bool
 }
 
 func (c channel) serve(timeout time.Duration) {
@@ -195,7 +200,15 @@ func (c channel) serve(timeout time.Duration) {
 		if c.wTimeout > 0 {
 			conn.SetWriteDeadline(time.Now().Add(c.wTimeout))
 		}
-		if err := writeFrame(conn, frame.Bytes()); err != nil {
+		data := frame.Bytes()
+		if c.useCompression && needCompression(data) {
+			if err := writeCompressedFrame(conn, data); err != nil {
+				err = fmt.Errorf("channel writeCompressedFrame: %v", err)
+				c.onError(err)
+			}
+			continue
+		}
+		if err := writeFrame(conn, data); err != nil {
 			err = fmt.Errorf("channel writeFrame: %v", err)
 			c.onError(err)
 		}

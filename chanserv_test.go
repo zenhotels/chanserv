@@ -37,7 +37,7 @@ func TestChanserv(t *testing.T) {
 	// start the Server
 	srv := NewServer(mpx, ServerOnError(func(err error) {
 		log.Println("[server WARN]", err)
-	}))
+	}), ServerUseCompression(true))
 	if err := srv.ListenAndServe("chanserv", srcFn); err != nil {
 		log.Fatalln("[server ERR]", err)
 	}
@@ -89,7 +89,7 @@ func TestRegistryChanserv(t *testing.T) {
 	// start the Server
 	srv := NewServer(mpx, ServerOnError(func(err error) {
 		log.Println("[server WARN]", err)
-	}))
+	}), ServerUseCompression(true))
 	if err := srv.ListenAndServe(testService, srcFn); err != nil {
 		log.Fatalln("[server ERR]", err)
 	}

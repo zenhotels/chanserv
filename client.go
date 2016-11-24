@@ -131,7 +131,7 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 	if d := c.timeouts.masterReadTimeout; d > 0 {
 		conn.SetReadDeadline(time.Now().Add(d))
 	}
-	buf, err := readFrame(conn)
+	buf, err := readFrame(conn, false)
 	if err != nil {
 		if err != io.EOF {
 			err = fmt.Errorf("post readFrame: %v", err)
@@ -161,7 +161,7 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 				if d := c.timeouts.masterReadTimeout; d > 0 {
 					conn.SetReadDeadline(time.Now().Add(d))
 				}
-				buf, err = readFrame(conn)
+				buf, err = readFrame(conn, false)
 				continue
 			}
 			vAddr := string(buf)
@@ -177,7 +177,7 @@ func (c client) post(conn net.Conn, body []byte) (<-chan Source, error) {
 			if d := c.timeouts.masterReadTimeout; d > 0 {
 				conn.SetReadDeadline(time.Now().Add(d))
 			}
-			buf, err = readFrame(conn)
+			buf, err = readFrame(conn, false)
 		}
 		conn.Close()
 		close(srcChan)
@@ -205,14 +205,14 @@ func (c client) discover(vAddr string, out chan<- Frame) {
 	if d := c.timeouts.frameReadTimeout; d > 0 {
 		conn.SetReadDeadline(time.Now().Add(d))
 	}
-	buf, err := readFrame(conn)
+	buf, err := readFrame(conn, true)
 	for err == nil {
 		out <- frame(buf)
 
 		if d := c.timeouts.frameReadTimeout; d > 0 {
 			conn.SetReadDeadline(time.Now().Add(d))
 		}
-		buf, err = readFrame(conn)
+		buf, err = readFrame(conn, true)
 	}
 	if err != io.EOF {
 		err = fmt.Errorf("discover readFrame: %v", err)

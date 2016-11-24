@@ -84,6 +84,14 @@ func ServerFrameWriteTimeout(d time.Duration) ServerOption {
 	}
 }
 
+// ServerCompression specifies whether the server must use compression
+// for the output streams.
+func ServerUseCompression(v bool) ServerOption {
+	return func(s *server) {
+		s.useCompression = v
+	}
+}
+
 // ClientOption applies a configuration option to the client.
 type ClientOption func(c *client)
 
